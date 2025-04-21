@@ -9,8 +9,8 @@ int main() {
 
     printf("You entered: %u\n", x);
 
-    if (x > 10 && x < 15) {
-        printf("Path A (x > 10 && x < 15)\n");
+    if ((x > 10 && x < 15) || (x > 20 && x < 25)) {
+        printf("Path A\n");
     } else {
         printf("Path B\n");
     }

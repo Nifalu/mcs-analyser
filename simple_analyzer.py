@@ -23,12 +23,19 @@ class SimpleAnalyzer:
     """
     class InputHook(angr.SimProcedure):
         def run(self, fmt, ptr):
-            # Simulate a scanf reading by using a symbolic variable
-            x = self.state.solver.BVS('x', 32)
+
+            sym_var_count = self.state.globals.get('scanf_count', 0)
+            sym_var_name = f'scanf_{sym_var_count}'
+            sym_var = self.state.solver.BVS(sym_var_name, 32)
             # store the value in the memory location pointed to by ptr
-            self.state.memory.store(ptr, x, endness=self.state.arch.memory_endness)
-            # save the variable in state.globals for easy access
-            self.state.globals['x'] = x
+            self.state.memory.store(ptr, sym_var, endness=self.state.arch.memory_endness)
+
+            if 'sym_vars' not in self.state.globals:
+                self.state.globals['sym_vars'] = []
+            self.state.globals['sym_vars'].append((sym_var_name, sym_var))
+
+            self.state.globals['scanf_count'] = sym_var_count + 1
+
             return 1
 
 
@@ -170,7 +177,7 @@ class SimpleAnalyzer:
         solutions = set()
 
         for i, found_state in enumerate(simgr.found):
-            if 'x' in found_state.globals:
+            if 'sym_vars' in found_state.globals and found_state.globals['sym_vars']:
                 solutions.add(found_state)
 
         return solutions
@@ -240,19 +247,21 @@ def main():
         for state in call_states:
             solutions = sa.find_all_solutions(state, out_addrs, max_solutions=5)
             for i, found_state in enumerate(solutions):
-                input_value = found_state.globals['x']
-                min_val = found_state.solver.min(input_value)
-                max_val =found_state.solver.max(input_value)
-                constraints = str(found_state.solver.constraints)
-                # Avoid printing too long constraints
-                if len(constraints) > 250:
-                    constraints = constraints[:250] + "..."
 
                 print(f"\nSolution {i+1}:")
-                print(f"Found a path to Path A with input: {input_value}")
-                print(f"Min value for x: {min_val}")
-                print(f"Max value for x: {max_val}")
-                print(f"Constraints for Path A: {constraints}")
+                sym_vars = found_state.globals.get('sym_vars', [])
+
+                for sym_var_name, sym_var in sym_vars:
+                    min_val = found_state.solver.min(sym_var)
+                    max_val = found_state.solver.max(sym_var)
+                    print(f"Min value for {sym_var_name}: {min_val}")
+                    print(f"Max value for {sym_var_name}: {max_val}")
+
+                constraints = str(found_state.solver.constraints)
+                if len(constraints) > 250:
+                    constraints = constraints[:250] + "..."
+                print(f"Constraints for Solution {i+1}: {constraints}")
+
 
     print("\n\nDone!\n")
 

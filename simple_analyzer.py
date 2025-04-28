@@ -1,3 +1,7 @@
+from logger import logger
+from logging import DEBUG, INFO, WARNING, ERROR, CRITICAL
+from rich import print
+
 import \
     angr
 from angr import \
@@ -5,10 +9,12 @@ from angr import \
     SimState
 
 import re
+import networkx as nx
 
 BINARY = "./bin/findme_x86"
 INTERESTING_INPUTS = ['scanf', 'gets', 'read']
 INTERESTING_OUTPUTS = ['printf', 'puts', 'write']
+
 
 class SimpleAnalyzer:
 
@@ -25,11 +31,6 @@ class SimpleAnalyzer:
             self.state.globals['x'] = x
             return 1
 
-    class OutputHook(angr.SimProcedure):
-        def run(self, fmt, *args):
-            self.state.globals['hit'] = True # Set a flag to indicate we hit an output function
-            return 1
-
 
     def __init__(self, binary: str) -> None:
         """
@@ -38,6 +39,8 @@ class SimpleAnalyzer:
         """
         self.binary = binary
         self.proj = angr.Project(self.binary, auto_load_libs=False)
+        self.cfg = self.proj.analyses.CFGEmulated()
+        self.logger = logger("SimpleAnalyzer", level=DEBUG)
 
 
     @staticmethod
@@ -53,8 +56,19 @@ class SimpleAnalyzer:
         pattern = '|'.join(escaped_names)
         return re.compile(pattern)
 
-
     def hook_interesting_functions(self,
+            functions=list[int]) -> None:
+        """
+        Hook interesting functions in the binary
+        :param functions:
+        :return: set of input and output function addresses
+        """
+        for addr in functions:
+            self.proj.hook(addr, SimpleAnalyzer.InputHook()) if not self.proj.is_hooked(addr) else None
+
+
+
+    def find_interesting_functions(self,
             interesting_input_funcs=None,
             interesting_output_funcs=None) -> (set[int], set[int]):
         """
@@ -80,15 +94,9 @@ class SimpleAnalyzer:
 
         # Warn if too many functions are found.
         if len(input_funcs) > 5:
-            print("Found a lot of input functions...")
+            self.logger.warning("Found a lot of input functions...")
         if len(output_funcs) > 5:
-            print("Found a lot of output functions...")
-
-        # Hook those addresses
-        for addr in input_funcs:
-            self.proj.hook(addr, SimpleAnalyzer.InputHook()) if not self.proj.is_hooked(addr) else None
-        for addr in output_funcs:
-            self.proj.hook(addr, SimpleAnalyzer.OutputHook()) if not self.proj.is_hooked(addr) else None
+            self.logger.warning("Found a lot of output functions...")
 
         return input_funcs, output_funcs
 
@@ -100,41 +108,39 @@ class SimpleAnalyzer:
         :return: Set of function addresses
         """
         found_funcs = set()
-        cfg = self.proj.analyses.CFGFast()
 
-        print(f"\nSearching for functions matching pattern: {pattern.pattern}")
+        self.logger.info(f"Searching for functions matching pattern: {pattern.pattern}")
 
-        for func in cfg.kb.functions.values():
+        for func in self.cfg.kb.functions.values():
             if func.name and pattern.search(func.name):
-                print(f"{func.name.ljust(15)} at {func.addr:#x}")
+                self.logger.info(f"{func.name.ljust(15)} at {func.addr:#x}")
                 found_funcs.add(func.addr)
 
         if not found_funcs:
-            raise RuntimeWarning(f"No function addresses found matching pattern {pattern}")
+            self.logger.warning(f"No function addresses found matching pattern {pattern.pattern}")
         return found_funcs
-
 
     def capture_call_states(self, func_addr: int) -> list[angr.SimState]:
         """
-        Not sure if this makes sense as I travel there anyway??
         :param func_addr:
         :return: list of SimState objects
         """
         initial_state: SimState = self.proj.factory.entry_state()
         simgr: SimulationManager = self.proj.factory.simgr(initial_state)
 
-        print(f"\nTrying to reach input state at addr {func_addr:#x}", end=" ")
+        self.logger.info(f"Capturing call states for function at {func_addr:#x}")
+        self.logger.info(f"Exploring from {initial_state.addr:#x} to {func_addr:#x}")
 
-        simgr.explore(find=func_addr)
+        simgr.explore(find=func_addr, cfg=self.cfg)
 
         if not simgr.found:
-            print(f"=> Could not reach function addr at {func_addr:#x}")
+            self.logger.warning(f"Could not reach function addr at {func_addr:#x}")
         else:
-            print(f"=> Found {len(simgr.found)} states that call {func_addr:#x}")
+            self.logger.info(f"Found {len(simgr.found)} states that call {func_addr:#x}")
         return simgr.found
 
 
-    def find_all_solutions(self, entry_state: SimState, max_solutions: int = 5) -> None:
+    def find_all_solutions(self, entry_state: SimState, targets: list[int], max_solutions: int = 5) -> set[SimState]:
         """
         Find all solutions to the binary that lead to a specific output.
         :param max_solutions:
@@ -148,17 +154,92 @@ class SimpleAnalyzer:
         entry_state.globals['hit'] = False
         simgr: SimulationManager = self.proj.factory.simgr(entry_state)
 
-        print(f"Exploring from {entry_state.addr:#x}", end=" ")
+        self.logger.info(f"Finding all solutions from {entry_state.addr:#x}")
+
         simgr.explore(
-            find=lambda s: s.globals.get('hit', False),
+            find=targets,
+            cfg=self.cfg,
             num_find=max_solutions,
         )
-        print(f"=> Found {len(simgr.found)} solutions")
+
+        self.logger.info(f"Found {len(simgr.found)} solutions")
+
         if len(simgr.found) == max_solutions:
-            print(f"Warning: Hit the max number of solutions ({max_solutions}), consider increasing it.")
+            self.logger.warning(f"Found {max_solutions} solutions, consider increasing the max_solutions parameter.")
+
+        solutions = set()
 
         for i, found_state in enumerate(simgr.found):
             if 'x' in found_state.globals:
+                solutions.add(found_state)
+
+        return solutions
+
+
+    def backtrack(self, out_addrs: set[int], in_addrs: set[int]) -> dict[int, dict[str, set[int]]]:
+        """
+        :param out_addrs: set of output function addresses
+        :param in_addrs: set of input function addresses
+        :return: a dict of (input, output) function addresses and the whitelist of addresses
+        """
+        reversed_graph = self.cfg.graph.reverse()
+
+        # our addr should point to scanf or similar which are calls so should be at the beginning of a block.
+        # so we can use force_fastpath=True. We are interested in user functions and not sys_calls.
+        proj_entry = self.cfg.model.get_any_node(self.proj.entry, is_syscall=False, force_fastpath=True)
+        in_nodes = {self.cfg.model.get_any_node(addr, is_syscall=False, force_fastpath=True) for addr in in_addrs}
+        out_nodes = {self.cfg.model.get_any_node(addr, is_syscall=False, force_fastpath=True) for addr in out_addrs}
+
+        result = {} # input_addr -> {whitelist: set, outputs: set}
+        self.logger.info(f"Backtracking from {len(out_nodes)} output functions to {len(in_nodes)} input functions")
+        for in_node in in_nodes:
+            # If we cannot reach the input function from the entry point, we discard it.
+            if not nx.has_path(self.cfg.graph, source=proj_entry, target=in_node):
+                self.logger.info(f"Input function at {in_node.addr:#x} is unreachable from entry point.")
+                continue
+
+            local_whitelist = set()
+            reachable_outputs = set()
+
+            for out_node in out_nodes:
+
+                if not nx.has_path(reversed_graph, source=out_node, target=in_node):
+                    self.logger.info(f"Output function at {out_node.addr:#x} is unreachable from input function at {in_node.addr:#x}")
+
+                # A simple path is a path with no repeated nodes,
+                # so we should not have loops and technically not need a cutoff...?
+                reachable_outputs.add(out_node.addr)
+                for path in nx.all_simple_paths(reversed_graph, source=out_node, target=in_node):
+                    local_whitelist.update((node.addr for node in path))
+
+            result[in_node.addr] = {
+                "whitelist": local_whitelist,
+                "outputs": reachable_outputs
+            }
+
+        self.logger.info("Backtracked whitelists for inputs:")
+        for input_addr, path_info in result.items():
+            outputs = ", ".join(f"{addr:#x}" for addr in path_info["outputs"])
+            whitelist = ", ".join(f"{addr:#x}" for addr in path_info["whitelist"])
+
+            self.logger.info(f"Input function at {input_addr:#x} can reach output functions at [{outputs}]")
+            self.logger.info(f"Whitelist of addresses: [{whitelist}]")
+
+        return result
+
+
+
+def main():
+
+    sa = SimpleAnalyzer(BINARY)
+    in_addrs, out_addrs = sa.find_interesting_functions()
+    sa.hook_interesting_functions(in_addrs)
+
+    for addr in in_addrs:
+        call_states = sa.capture_call_states(addr)
+        for state in call_states:
+            solutions = sa.find_all_solutions(state, out_addrs, max_solutions=5)
+            for i, found_state in enumerate(solutions):
                 input_value = found_state.globals['x']
                 min_val = found_state.solver.min(input_value)
                 max_val =found_state.solver.max(input_value)
@@ -172,17 +253,6 @@ class SimpleAnalyzer:
                 print(f"Min value for x: {min_val}")
                 print(f"Max value for x: {max_val}")
                 print(f"Constraints for Path A: {constraints}")
-
-
-def main():
-
-    sa = SimpleAnalyzer(BINARY)
-    in_addrs, out_addrs = sa.hook_interesting_functions()
-
-    for addr in in_addrs:
-        call_states = sa.capture_call_states(addr)
-        for state in call_states:
-            sa.find_all_solutions(state, max_solutions=5)
 
     print("\n\nDone!\n")
 

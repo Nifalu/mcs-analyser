@@ -11,9 +11,11 @@ from angr import \
 import re
 import networkx as nx
 
-BINARY = "./bin/findme_x86"
+BINARY = "./bin/test_x86"
 INTERESTING_INPUTS = ['scanf', 'gets', 'read']
 INTERESTING_OUTPUTS = ['printf', 'puts', 'write']
+
+log = logger("SimpleAnalyzer", level=DEBUG)
 
 
 class SimpleAnalyzer:
@@ -23,7 +25,6 @@ class SimpleAnalyzer:
     """
     class InputHook(angr.SimProcedure):
         def run(self, fmt, ptr):
-
             sym_var_count = self.state.globals.get('scanf_count', 0)
             sym_var_name = f'scanf_{sym_var_count}'
             sym_var = self.state.solver.BVS(sym_var_name, 32)
@@ -38,7 +39,6 @@ class SimpleAnalyzer:
 
             return 1
 
-
     def __init__(self, binary: str) -> None:
         """
         Initialize the SimpleAnalyzer with the binary to analyze.
@@ -47,7 +47,7 @@ class SimpleAnalyzer:
         self.binary = binary
         self.proj = angr.Project(self.binary, auto_load_libs=False)
         self.cfg = self.proj.analyses.CFGEmulated()
-        self.logger = logger("SimpleAnalyzer", level=DEBUG)
+
 
 
     @staticmethod
@@ -64,15 +64,13 @@ class SimpleAnalyzer:
         return re.compile(pattern)
 
     def hook_interesting_functions(self,
-            functions=list[int]) -> None:
+            in_funcs = list[int]) -> None:
         """
         Hook interesting functions in the binary
-        :param functions:
         :return: set of input and output function addresses
         """
-        for addr in functions:
+        for addr in in_funcs:
             self.proj.hook(addr, SimpleAnalyzer.InputHook()) if not self.proj.is_hooked(addr) else None
-
 
 
     def find_interesting_functions(self,
@@ -101,9 +99,9 @@ class SimpleAnalyzer:
 
         # Warn if too many functions are found.
         if len(input_funcs) > 5:
-            self.logger.warning("Found a lot of input functions...")
+            log.warning("Found a lot of input functions...")
         if len(output_funcs) > 5:
-            self.logger.warning("Found a lot of output functions...")
+            log.warning("Found a lot of output functions...")
 
         return input_funcs, output_funcs
 
@@ -116,15 +114,15 @@ class SimpleAnalyzer:
         """
         found_funcs = set()
 
-        self.logger.info(f"Searching for functions matching pattern: {pattern.pattern}")
+        log.info(f"Searching for functions matching pattern: {pattern.pattern}")
 
         for func in self.cfg.kb.functions.values():
             if func.name and pattern.search(func.name):
-                self.logger.info(f"{func.name.ljust(15)} at {func.addr:#x}")
+                log.info(f"{func.name.ljust(15)} at {func.addr:#x}")
                 found_funcs.add(func.addr)
 
         if not found_funcs:
-            self.logger.warning(f"No function addresses found matching pattern {pattern.pattern}")
+            log.warning(f"No function addresses found matching pattern {pattern.pattern}")
         return found_funcs
 
     def capture_call_states(self, func_addr: int) -> list[angr.SimState]:
@@ -135,15 +133,15 @@ class SimpleAnalyzer:
         initial_state: SimState = self.proj.factory.entry_state()
         simgr: SimulationManager = self.proj.factory.simgr(initial_state)
 
-        self.logger.info(f"Capturing call states for function at {func_addr:#x}")
-        self.logger.info(f"Exploring from {initial_state.addr:#x} to {func_addr:#x}")
+        log.info(f"Capturing call states for function at {func_addr:#x}")
+        log.info(f"Exploring from {initial_state.addr:#x} to {func_addr:#x}")
 
         simgr.explore(find=func_addr, cfg=self.cfg)
 
         if not simgr.found:
-            self.logger.warning(f"Could not reach function addr at {func_addr:#x}")
+            log.warning(f"Could not reach function addr at {func_addr:#x}")
         else:
-            self.logger.info(f"Found {len(simgr.found)} states that call {func_addr:#x}")
+            log.info(f"Found {len(simgr.found)} states that call {func_addr:#x}")
         return simgr.found
 
 
@@ -155,13 +153,15 @@ class SimpleAnalyzer:
         :return: None
         """
 
-        # Reset the hit flag to not include
-        # interesting output functions that were
-        # found on the way to the input state.
-        entry_state.globals['hit'] = False
+        entry_state.inspect.b(
+            'call',
+            when=angr.BP_BEFORE,
+            action=lambda state: self.check_output(state, targets)
+        )
+
         simgr: SimulationManager = self.proj.factory.simgr(entry_state)
 
-        self.logger.info(f"Finding all solutions from {entry_state.addr:#x}")
+        log.info(f"Finding all solutions from {entry_state.addr:#x}")
 
         simgr.explore(
             find=targets,
@@ -169,10 +169,10 @@ class SimpleAnalyzer:
             num_find=max_solutions,
         )
 
-        self.logger.info(f"Found {len(simgr.found)} solutions")
+        log.info(f"Found {len(simgr.found)} solutions")
 
         if len(simgr.found) == max_solutions:
-            self.logger.warning(f"Found {max_solutions} solutions, consider increasing the max_solutions parameter.")
+            log.warning(f"Found {max_solutions} solutions, consider increasing the max_solutions parameter.")
 
         solutions = set()
 
@@ -182,58 +182,50 @@ class SimpleAnalyzer:
 
         return solutions
 
-
-    def backtrack(self, out_addrs: set[int], in_addrs: set[int]) -> dict[int, dict[str, set[int]]]:
+    def check_output(self, state: angr.SimState, output_func_addrs: list[int]) -> None:
         """
-        :param out_addrs: set of output function addresses
-        :param in_addrs: set of input function addresses
-        :return: a dict of (input, output) function addresses and the whitelist of addresses
+        Check if the current call is to an output function, and if so, extract symbolic arguments.
+        Save symbolic outputs into state.globals['output_constraints'].
         """
-        reversed_graph = self.cfg.graph.reverse()
 
-        # our addr should point to scanf or similar which are calls so should be at the beginning of a block.
-        # so we can use force_fastpath=True. We are interested in user functions and not sys_calls.
-        proj_entry = self.cfg.model.get_any_node(self.proj.entry, is_syscall=False, force_fastpath=True)
-        in_nodes = {self.cfg.model.get_any_node(addr, is_syscall=False, force_fastpath=True) for addr in in_addrs}
-        out_nodes = {self.cfg.model.get_any_node(addr, is_syscall=False, force_fastpath=True) for addr in out_addrs}
+        call_target = state.inspect.function_address  # address of the function being called
+        concrete_call_target = state.solver.eval(call_target, cast_to=int)
+        log.debug(f"Checking if {concrete_call_target} is in {output_func_addrs}")
 
-        result = {} # input_addr -> {whitelist: set, outputs: set}
-        self.logger.info(f"Backtracking from {len(out_nodes)} output functions to {len(in_nodes)} input functions")
-        for in_node in in_nodes:
-            # If we cannot reach the input function from the entry point, we discard it.
-            if not nx.has_path(self.cfg.graph, source=proj_entry, target=in_node):
-                self.logger.info(f"Input function at {in_node.addr:#x} is unreachable from entry point.")
-                continue
+        if concrete_call_target not in output_func_addrs:
+            log.debug(f"It is not. Skipping...")
+            return  # not an interesting output function
 
-            local_whitelist = set()
-            reachable_outputs = set()
+        log.info(f"Output function called at {concrete_call_target:#x}")
 
-            for out_node in out_nodes:
+        arch_name = state.arch.name.lower()
 
-                if not nx.has_path(reversed_graph, source=out_node, target=in_node):
-                    self.logger.info(f"Output function at {out_node.addr:#x} is unreachable from input function at {in_node.addr:#x}")
+        if 'x86' in arch_name:
+            format_str_ptr = state.memory.load(state.regs.esp + 4, state.arch.bytes)
+            output_value = state.memory.load(state.regs.esp + 8, state.arch.bytes)
+        elif 'amd64' in arch_name:
+            format_str_ptr = state.regs.rdi
+            output_value = state.regs.rsi
+        else:
+            log.warning(f"Architecture {arch_name} not handled for argument fetching.")
+            return
 
-                # A simple path is a path with no repeated nodes,
-                # so we should not have loops and technically not need a cutoff...?
-                reachable_outputs.add(out_node.addr)
-                for path in nx.all_simple_paths(reversed_graph, source=out_node, target=in_node):
-                    local_whitelist.update((node.addr for node in path))
 
-            result[in_node.addr] = {
-                "whitelist": local_whitelist,
-                "outputs": reachable_outputs
-            }
-
-        self.logger.info("Backtracked whitelists for inputs:")
-        for input_addr, path_info in result.items():
-            outputs = ", ".join(f"{addr:#x}" for addr in path_info["outputs"])
-            whitelist = ", ".join(f"{addr:#x}" for addr in path_info["whitelist"])
-
-            self.logger.info(f"Input function at {input_addr:#x} can reach output functions at [{outputs}]")
-            self.logger.info(f"Whitelist of addresses: [{whitelist}]")
-
-        return result
-
+        if state.solver.symbolic(output_value):
+            log.info(f"Output argument is symbolic! Expr: {output_value}")
+            if 'output_constraints' not in state.globals:
+                state.globals['output_constraints'] = []
+            state.globals['output_constraints'].append(
+                (f'output_{concrete_call_target:x}', output_value)
+            )
+        else:
+            concrete_val = state.solver.eval(output_value, cast_to=int)
+            log.info(f"Output argument is concrete: {concrete_val}")
+            if 'output_constraints' not in state.globals:
+                state.globals['output_constraints'] = []
+            state.globals['output_constraints'].append(
+                (f'output_{concrete_call_target:x}', output_value)
+            )
 
 
 def main():
@@ -245,23 +237,40 @@ def main():
     for addr in in_addrs:
         call_states = sa.capture_call_states(addr)
         for state in call_states:
-            solutions = sa.find_all_solutions(state, out_addrs, max_solutions=5)
+            solutions = sa.find_all_solutions(state, out_addrs, max_solutions=10)
             for i, found_state in enumerate(solutions):
-
                 print(f"\nSolution {i+1}:")
                 sym_vars = found_state.globals.get('sym_vars', [])
+                output_exprs = found_state.globals.get('output_constraints', [])
 
-                for sym_var_name, sym_var in sym_vars:
-                    min_val = found_state.solver.min(sym_var)
-                    max_val = found_state.solver.max(sym_var)
-                    print(f"Min value for {sym_var_name}: {min_val}")
-                    print(f"Max value for {sym_var_name}: {max_val}")
+                if output_exprs:
+                    print("Output constraints:")
+                    for name, expr in output_exprs:
+                        try:
+                            min_val = found_state.solver.min(expr)
+                            max_val = found_state.solver.max(expr)
+                            print(f"  {name}: Range [{min_val}, {max_val}]")
+                        except Exception as e:
+                            print(f"  {name}: (Could not solve for min/max: {e})")
+                else:
+                    print("No output constraints captured.")
+
+                if sym_vars:
+                    print("Symbolic input variables:")
+                    for sym_var_name, sym_var in sym_vars:
+                        try:
+                            min_val = found_state.solver.min(sym_var)
+                            max_val = found_state.solver.max(sym_var)
+                            print(f"  {sym_var_name}: Range [{min_val:#x}, {max_val:#x}]")
+                        except Exception as e:
+                            print(f"  {sym_var_name}: (Could not solve for min/max: {e})")
+                else:
+                    print("No symbolic input variables captured.")
 
                 constraints = str(found_state.solver.constraints)
                 if len(constraints) > 250:
                     constraints = constraints[:250] + "..."
                 print(f"Constraints for Solution {i+1}: {constraints}")
-
 
     print("\n\nDone!\n")
 

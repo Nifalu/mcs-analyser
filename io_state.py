@@ -20,62 +20,74 @@ class IOState:
 
     def __init__(self,
                  name: str,
-                 node: cl_ast.Base,
+                 bv: cl_ast.BV,
                  constraints: Iterable[cl_ast.Bool],
                  ):
         self.name = name
-        self.node: cl_ast.Base = node
+        self.bv: cl_ast.BV = bv
         self.constraints: List[cl_ast.bool] = list(constraints)
+
+    @classmethod
+    def unconstrained(
+        cls,
+        name: str,
+        length: int,
+    ) -> 'IOState':
+        """
+        Create an unconstrained IOState with the given name and bit-width.
+        """
+        bv = cl_ast.bv.BVS(name, length)
+        return cls(name, bv, [])
 
     @classmethod
     def from_state(
         cls,
         name: str,
-        node: cl_ast.Base,
+        bv: cl_ast.BV,
         state: "SimState",
         *,
         simplify: bool = True,          # ← new knob
     ) -> "IOState":
 
-        if node.symbolic:
-            wanted_vars = node.variables               # e.g. {"scanf_0_14_32"}
+        if bv.symbolic:
+            wanted_vars = bv.variables               # e.g. {"scanf_0_14_32"}
             slice_constraints: list[cl_ast.Bool] = []
 
             for c in state.solver.constraints:
                 if not wanted_vars.isdisjoint(c.variables):
                     slice_constraints.append(cl_simplify(c) if simplify else c)
 
-            return cls(name, node, slice_constraints)
+            return cls(name, bv, slice_constraints)
         else:
-            return cls(name, node, [])
+            return cls(name, bv, [])
 
 
     def is_symbolic(self) -> bool:
         """Return True if the encapsulated value is symbolic."""
-        return self.node.symbolic
+        return self.bv.symbolic
 
     def is_concrete(self) -> bool:
         """Return True if the encapsulated value is concrete."""
-        return not self.node.symbolic
+        return not self.bv.symbolic
 
     def range(self, solver: clSolver | None = None) -> tuple[int, int]:
         """Return *min*, *max* model of the encapsulated value under its slice."""
         s = solver or clSolver()
         if self.constraints:
             s.add(*self.constraints)          # safe: list is non-empty
-            lo = s.min(self.node)
-            hi = s.max(self.node)
+            lo = s.min(self.bv)
+            hi = s.max(self.bv)
         else:
-            lo, hi = 0, (1 << self.node.length) - 1   # fully unconstrained
+            lo, hi = 0, (1 << self.bv.length) - 1   # fully unconstrained
 
         return lo, hi
 
     def pretty(self, max_len: int = 96) -> str:
         if self.is_concrete():
-            line = f"IOState <{self.name}> is concrete: {hex(self.node.args[0])} ({self.node.length}-bit)"
+            line = f"IOState <{self.name}> is concrete: {hex(self.bv.args[0])} ({self.bv.length}-bit)"
             return line
 
-        lines = [f"OutputCapsule <{self.name}> ({self.node.length}‑bit)"]
+        lines = [f"OutputCapsule <{self.name}> ({self.bv.length}‑bit)"]
         lo, hi = self.range()
         lines.append(f"  range = [{hex(lo)}, {hex(hi)}]")
         lines.append("  slice:")
@@ -87,7 +99,7 @@ class IOState:
         return "\n".join(lines)
 
     def __repr__(self) -> str:  # pragma: no cover
-        return f"<OutputCapsule name={self.name!r} bits={self.node.length} slice_len={len(self.constraints)}>"
+        return f"<OutputCapsule name={self.name!r} bits={self.bv.length} slice_len={len(self.constraints)}>"
 
 
     def print_rich(self, max_len: int = 96) -> None:
@@ -104,7 +116,7 @@ class IOState:
             table = Table(title=f"IOState <{self.name}>")
             table.add_column("Bit-width", justify="right")
             table.add_column("Value",     justify="right")
-            table.add_row(str(self.node.length), hex(self.node.args[0]))
+            table.add_row(str(self.bv.length), hex(self.bv.args[0]))
             console.print(table)
             return
 
@@ -114,7 +126,7 @@ class IOState:
         meta = Table(title=f"IOState <{self.name}>")
         meta.add_column("Field")
         meta.add_column("Value", justify="right")
-        meta.add_row("Bit-width", str(self.node.length))
+        meta.add_row("Bit-width", str(self.bv.length))
         meta.add_row("min",       hex(lo))
         meta.add_row("max",       hex(hi))
 
@@ -185,11 +197,11 @@ class IOSnapshot:
 
         def _row(role: str, state: IOState):
             if state.is_concrete():
-                val = hex(int(state.node.args[0]))
-                table.add_row(role, state.name, str(state.node.length), val)
+                val = hex(int(state.bv.args[0]))
+                table.add_row(role, state.name, str(state.bv.length), val)
             else:
                 lo, hi = state.range()
-                table.add_row(role, state.name, str(state.node.length),
+                table.add_row(role, state.name, str(state.bv.length),
                               f"[{hex(lo)}, {hex(hi)}]")
 
         for ios in self.inputs:

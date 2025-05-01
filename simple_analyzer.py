@@ -23,28 +23,48 @@ class SimpleAnalyzer:
     """
     Have some hooks to track the IO operations.
     """
+
     class InputHook(angr.SimProcedure):
+        def __init__(self, inputs):
+            super().__init__()
+            self.inputs = inputs
+
+
         def run(self, fmt, ptr):
-            sym_var_count = self.state.globals.get('scanf_count', 0)
-            sym_var_name = f'scanf_{sym_var_count}'
-            sym_var = self.state.solver.BVS(sym_var_name, 32)
+            input_count = self.state.globals.get('input_count', 0)
+
+            if input_count < len(self.inputs):
+                ios = self.inputs[input_count]
+                bv = ios.bv
+                bv_name = ios.name
+                if ios.constraints:
+                    self.state.solver.add(*ios.constraints)
+                log.info(f"Using input {input_count} for {bv_name}: {bv}")
+            else:
+                log.warning(f"Input count ({input_count}) exceeds number of passed inputs ({len(self.inputs)}). Using default input.")
+                bv_name = f"auto_input_{input_count}"
+                bv = self.state.solver.BVS(bv_name, 32)
+
+
             # store the value in the memory location pointed to by ptr
-            self.state.memory.store(ptr, sym_var, endness=self.state.arch.memory_endness)
+            self.state.memory.store(ptr, bv, endness=self.state.arch.memory_endness)
 
-            if 'sym_vars' not in self.state.globals:
-                self.state.globals['sym_vars'] = []
-            self.state.globals['sym_vars'].append((sym_var_name, sym_var))
+            if 'inputs' not in self.state.globals:
+                self.state.globals['inputs'] = []
+            self.state.globals['inputs'].append((bv_name, bv))
 
-            self.state.globals['scanf_count'] = sym_var_count + 1
+            self.state.globals['input_count'] = input_count + 1
 
             return 1
 
-    def __init__(self, binary: str) -> None:
+
+    def __init__(self, binary: str, inputs: list[IOState]) -> None:
         """
         Initialize the SimpleAnalyzer with the binary to analyze.
         :param binary: Path to the binary file.
         """
         self.binary = binary
+        self.inputs = inputs
         self.proj = angr.Project(self.binary, auto_load_libs=False)
         self.cfg = self.proj.analyses.CFGEmulated()
 
@@ -64,13 +84,13 @@ class SimpleAnalyzer:
         return re.compile(pattern)
 
     def hook_interesting_functions(self,
-            in_funcs = list[int]) -> None:
+            in_funcs: list[int]) -> None:
         """
         Hook interesting functions in the binary
         :return: set of input and output function addresses
         """
         for addr in in_funcs:
-            self.proj.hook(addr, SimpleAnalyzer.InputHook()) if not self.proj.is_hooked(addr) else None
+            self.proj.hook(addr, self.InputHook(self.inputs)) if not self.proj.is_hooked(addr) else None
 
 
     def find_interesting_functions(self,
@@ -148,6 +168,7 @@ class SimpleAnalyzer:
     def find_all_solutions(self, entry_state: SimState, targets: list[int], max_solutions: int = 5) -> set[SimState]:
         """
         Find all solutions to the binary that lead to a specific output.
+        :param targets:
         :param max_solutions:
         :param entry_state: initial state of the binary
         :return: None
@@ -177,7 +198,7 @@ class SimpleAnalyzer:
         solutions = set()
 
         for i, found_state in enumerate(simgr.found):
-            if 'sym_vars' in found_state.globals and found_state.globals['sym_vars']:
+            if 'inputs' in found_state.globals and found_state.globals['inputs']:
                 solutions.add(found_state)
 
         return solutions
@@ -201,10 +222,10 @@ class SimpleAnalyzer:
         arch_name = state.arch.name.lower()
 
         if 'x86' in arch_name:
-            format_str_ptr = state.memory.load(state.regs.esp + 4, state.arch.bytes)
+            #format_str_ptr = state.memory.load(state.regs.esp + 4, state.arch.bytes)
             output_value = state.memory.load(state.regs.esp + 8, state.arch.bytes)
         elif 'amd64' in arch_name:
-            format_str_ptr = state.regs.rdi
+            #format_str_ptr = state.regs.rdi
             output_value = state.regs.rsi
         else:
             log.warning(f"Architecture {arch_name} not handled for argument fetching.")
@@ -240,11 +261,16 @@ class SimpleAnalyzer:
 
 def main():
 
-    sa = SimpleAnalyzer(BINARY)
+    # Have an unconstrained input (IOState)
+
+    initial_input = IOState.unconstrained("input", 32)
+
+    sa = SimpleAnalyzer(BINARY, [initial_input])
     in_addrs, out_addrs = sa.find_interesting_functions()
     sa.hook_interesting_functions(in_addrs)
 
     snapshot = IOSnapshot("Component A")
+    snapshot.add_input(initial_input)
 
     for addr in in_addrs:
         call_states = sa.capture_call_states(addr)
@@ -252,7 +278,7 @@ def main():
             solutions = sa.find_all_solutions(state, out_addrs, max_solutions=10)
             for i, found_state in enumerate(solutions):
                 print(f"\nSolution {i+1}:")
-                sym_vars = found_state.globals.get('sym_vars', [])
+                sym_vars = found_state.globals.get('inputs', [])
                 output_exprs = found_state.globals.get('output_constraints', [])
 
                 if output_exprs:

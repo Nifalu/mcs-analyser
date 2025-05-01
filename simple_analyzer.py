@@ -1,6 +1,7 @@
 from logger import logger
 from logging import DEBUG, INFO, WARNING, ERROR, CRITICAL
 from rich import print
+from io_state import IOState, IOSnapshot
 
 import \
     angr
@@ -9,7 +10,6 @@ from angr import \
     SimState
 
 import re
-import networkx as nx
 
 BINARY = "./bin/test_x86"
 INTERESTING_INPUTS = ['scanf', 'gets', 'read']
@@ -227,12 +227,24 @@ class SimpleAnalyzer:
                 (f'output_{concrete_call_target:x}', output_value)
             )
 
+        if 'io_states' not in state.globals:
+                state.globals['io_states'] = []
+        try:
+            ios = IOState.from_state(f"output_{concrete_call_target:x}", output_value, state)
+            state.globals['io_states'].append(ios)
+            log.info(f"Captured IOState: {ios}")
+        except ValueError as e:
+            log.exception(f"Error creating IOState:", e)
+            return
+
 
 def main():
 
     sa = SimpleAnalyzer(BINARY)
     in_addrs, out_addrs = sa.find_interesting_functions()
     sa.hook_interesting_functions(in_addrs)
+
+    snapshot = IOSnapshot("Component A")
 
     for addr in in_addrs:
         call_states = sa.capture_call_states(addr)
@@ -244,34 +256,43 @@ def main():
                 output_exprs = found_state.globals.get('output_constraints', [])
 
                 if output_exprs:
-                    print("Output constraints:")
+                    print("Output variables:")
                     for name, expr in output_exprs:
                         try:
                             min_val = found_state.solver.min(expr)
                             max_val = found_state.solver.max(expr)
                             print(f"  {name}: Range [{min_val}, {max_val}]")
+                            print(f"  Constraints on {name}: {expr}")
                         except Exception as e:
                             print(f"  {name}: (Could not solve for min/max: {e})")
                 else:
                     print("No output constraints captured.")
 
                 if sym_vars:
-                    print("Symbolic input variables:")
+                    print("input variables:")
                     for sym_var_name, sym_var in sym_vars:
                         try:
                             min_val = found_state.solver.min(sym_var)
                             max_val = found_state.solver.max(sym_var)
                             print(f"  {sym_var_name}: Range [{min_val:#x}, {max_val:#x}]")
+                            print(f"  Constraints on {sym_var_name}: {sym_var}")
                         except Exception as e:
                             print(f"  {sym_var_name}: (Could not solve for min/max: {e})")
                 else:
-                    print("No symbolic input variables captured.")
+                    print("No input variables captured.")
 
                 constraints = str(found_state.solver.constraints)
                 if len(constraints) > 250:
                     constraints = constraints[:250] + "..."
-                print(f"Constraints for Solution {i+1}: {constraints}")
+                print(f"All Constraints for Solution {i+1}: {constraints}")
 
+                # ---------- new comparison block --------------------------------
+                io_states: list[IOState] | None = found_state.globals.get('io_states', [])
+                for ios in io_states:
+                    ios.print_rich()
+                    snapshot.add_output(ios)
+    print("\n\n\n")
+    snapshot.print_rich()
     print("\n\nDone!\n")
 
 if __name__ == "__main__":

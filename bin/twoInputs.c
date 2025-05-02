@@ -9,10 +9,9 @@ int main() {
     scanf("%u", &x);
     scanf("%u", &y);
 
-    z = x - y; // potential overflow...?
 
-    if (z > 10) {
-        printf("The result is %u", y);
+    if (x > 10) {
+        printf("The result is %u", z);
     }
 
     return 0;

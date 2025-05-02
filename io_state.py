@@ -1,6 +1,5 @@
 from claripy import simplify as cl_simplify
 from claripy import ast as cl_ast
-from claripy import And
 from claripy.solvers import Solver as clSolver
 from angr import SimState
 from typing import \

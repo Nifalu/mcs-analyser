@@ -2,6 +2,7 @@ from logger import logger
 from logging import DEBUG, INFO, WARNING, ERROR, CRITICAL
 from rich import print
 from io_state import IOState, IOSnapshot
+from pathlib import Path
 
 import \
     angr
@@ -12,6 +13,7 @@ from angr import \
 import re
 
 BINARY = "./bin/test_x86"
+
 INTERESTING_INPUTS = ['scanf', 'gets', 'read']
 INTERESTING_OUTPUTS = ['printf', 'puts', 'write']
 
@@ -39,7 +41,6 @@ class SimpleAnalyzer:
                 bv_name = ios.name
                 if ios.constraints:
                     self.state.solver.add(*ios.constraints)
-                log.info(f"Using input {input_count} for {bv_name}: {bv}")
             else:
                 log.warning(f"Input count ({input_count}) exceeds number of passed inputs ({len(self.inputs)}). Using default input.")
                 bv_name = f"auto_input_{input_count}"
@@ -145,29 +146,40 @@ class SimpleAnalyzer:
             log.warning(f"No function addresses found matching pattern {pattern.pattern}")
         return found_funcs
 
-    def capture_call_states(self, func_addr: int) -> list[angr.SimState]:
+    def capture_call_states(self, func_addrs: list[int], num_find: int = 10) -> [angr.SimState]:
         """
-        :param func_addr:
+        Capture the call states for a specific function address.
+        Note: Does N * explore() !!
+
+        Maybe we can optimize here to not call explore() in a loop...
+
+        :param num_find:
+        :param func_addrs:
         :return: list of SimState objects
         """
         initial_state: SimState = self.proj.factory.entry_state()
         simgr: SimulationManager = self.proj.factory.simgr(initial_state)
 
-        log.info(f"Capturing call states for function at {func_addr:#x}")
-        log.info(f"Exploring from {initial_state.addr:#x} to {func_addr:#x}")
+        log.info(f"Capturing call states")
 
-        simgr.explore(find=func_addr, cfg=self.cfg)
+        call_states = []
+        for addr in func_addrs:
+            log.info(f"Exploring from {initial_state.addr:#x} to {addr:#x}")
+            simgr.explore(find=addr, num_find=num_find, cfg=self.cfg)
+            if not simgr.found:
+                log.warning(f"Could not reach function addr at {addr:#x}")
+            else:
+                log.info(f"Found {len(simgr.found)} states that call {addr:#x}")
+                call_states.extend(simgr.found)
 
-        if not simgr.found:
-            log.warning(f"Could not reach function addr at {func_addr:#x}")
-        else:
-            log.info(f"Found {len(simgr.found)} states that call {func_addr:#x}")
         return simgr.found
 
 
     def find_all_solutions(self, entry_state: SimState, targets: list[int], max_solutions: int = 5) -> set[SimState]:
         """
         Find all solutions to the binary that lead to a specific output.
+        Note: Does explore() !!
+
         :param targets:
         :param max_solutions:
         :param entry_state: initial state of the binary
@@ -251,72 +263,108 @@ class SimpleAnalyzer:
         if 'io_states' not in state.globals:
                 state.globals['io_states'] = []
         try:
-            ios = IOState.from_state(f"output_{concrete_call_target:x}", output_value, state)
+            ios = IOState.from_state(f"{self.binary}_out_{concrete_call_target:x}", output_value, state)
             state.globals['io_states'].append(ios)
-            log.info(f"Captured IOState: {ios}")
+            log.info(f"Captured IOState: {ios} with value {output_value} and constraints {ios.constraints}")
+            log.info(f"state constraints were {state.solver.constraints}")
         except ValueError as e:
             log.exception(f"Error creating IOState:", e)
             return
 
 
+    def analyze(self) -> IOSnapshot:
+
+        # Find interesting functions in the binary (i.E scanf, printf, etc.)
+        in_addrs, out_addrs = self.find_interesting_functions()
+        # Capture the call states of those to correctly set up the entry states
+        entry_states = self.capture_call_states(in_addrs, num_find=10)
+        # Hook the interesting functions in the binary
+        self.hook_interesting_functions(in_addrs)
+
+        # Prepare a snapshot to store the results of this analysis
+        snapshot = IOSnapshot(f"Binary {self.binary}")
+        snapshot.add_input(self.inputs)
+
+        # Iterate over the entry states and find all solutions for each
+        all_solutions = []
+        for state in entry_states:
+            all_solutions.extend(self.find_all_solutions(state, out_addrs, max_solutions=10))
+
+        # Add the outputs + constraints to the snapshot
+        for i, found_state in enumerate(all_solutions):
+            snapshot.add_output(found_state.globals.get('io_states', []))
+
+        return snapshot
+
+
+
 def main():
 
     # Have an unconstrained input (IOState)
-
-    initial_input = IOState.unconstrained("input", 32)
+    initial_input = IOState.unconstrained("input", 64)
 
     sa = SimpleAnalyzer(BINARY, [initial_input])
+
+    # Find interesting functions in the binary (i.E scanf, printf, etc.)
     in_addrs, out_addrs = sa.find_interesting_functions()
+    # Capture the call states of those to correctly set up the entry states
+    entry_states = sa.capture_call_states(in_addrs, num_find=10)
+    # Hook the interesting functions in the binary
     sa.hook_interesting_functions(in_addrs)
 
-    snapshot = IOSnapshot("Component A")
-    snapshot.add_input(initial_input)
+    # Prepare a snapshot to store the results of this analysis
+    snapshot = IOSnapshot(f"Binary {sa.binary}")
+    snapshot.add_input(sa.inputs)
 
-    for addr in in_addrs:
-        call_states = sa.capture_call_states(addr)
-        for state in call_states:
-            solutions = sa.find_all_solutions(state, out_addrs, max_solutions=10)
-            for i, found_state in enumerate(solutions):
-                print(f"\nSolution {i+1}:")
-                sym_vars = found_state.globals.get('inputs', [])
-                output_exprs = found_state.globals.get('output_constraints', [])
+    # Iterate over the entry states and find all solutions for each
+    all_solutions = []
+    for state in entry_states:
+        all_solutions.extend(sa.find_all_solutions(state, out_addrs, max_solutions=10))
 
-                if output_exprs:
-                    print("Output variables:")
-                    for name, expr in output_exprs:
-                        try:
-                            min_val = found_state.solver.min(expr)
-                            max_val = found_state.solver.max(expr)
-                            print(f"  {name}: Range [{min_val}, {max_val}]")
-                            print(f"  Constraints on {name}: {expr}")
-                        except Exception as e:
-                            print(f"  {name}: (Could not solve for min/max: {e})")
-                else:
-                    print("No output constraints captured.")
 
-                if sym_vars:
-                    print("input variables:")
-                    for sym_var_name, sym_var in sym_vars:
-                        try:
-                            min_val = found_state.solver.min(sym_var)
-                            max_val = found_state.solver.max(sym_var)
-                            print(f"  {sym_var_name}: Range [{min_val:#x}, {max_val:#x}]")
-                            print(f"  Constraints on {sym_var_name}: {sym_var}")
-                        except Exception as e:
-                            print(f"  {sym_var_name}: (Could not solve for min/max: {e})")
-                else:
-                    print("No input variables captured.")
+    for i, found_state in enumerate(all_solutions):
+        print(f"\nSolution {i+1}:")
+        sym_vars = found_state.globals.get('inputs', [])
+        output_exprs = found_state.globals.get('output_constraints', [])
 
-                constraints = str(found_state.solver.constraints)
-                if len(constraints) > 250:
-                    constraints = constraints[:250] + "..."
-                print(f"All Constraints for Solution {i+1}: {constraints}")
+        if output_exprs:
+            print("Output variables:")
+            for name, expr in output_exprs:
+                try:
+                    min_val = found_state.solver.min(expr)
+                    max_val = found_state.solver.max(expr)
+                    print(f"  {name}: Range [{min_val}, {max_val}]")
+                    print(f"  Constraints on {name}: {expr}")
+                except Exception as e:
+                    print(f"  {name}: (Could not solve for min/max: {e})")
+        else:
+            print("No output constraints captured.")
 
-                # ---------- new comparison block --------------------------------
-                io_states: list[IOState] | None = found_state.globals.get('io_states', [])
-                for ios in io_states:
-                    ios.print_rich()
-                    snapshot.add_output(ios)
+        if sym_vars:
+            print("input variables:")
+            for sym_var_name, sym_var in sym_vars:
+                try:
+                    min_val = found_state.solver.min(sym_var)
+                    max_val = found_state.solver.max(sym_var)
+                    print(f"  {sym_var_name}: Range [{min_val:#x}, {max_val:#x}]")
+                    print(f"  Constraints on {sym_var_name}: {sym_var}")
+                except Exception as e:
+                    print(f"  {sym_var_name}: (Could not solve for min/max: {e})")
+        else:
+            print("No input variables captured.")
+
+        constraints = str(found_state.solver.constraints)
+        if len(constraints) > 250:
+            constraints = constraints[:250] + "..."
+        print(f"All Constraints for Solution {i+1}: {constraints}")
+
+        # ---------- new comparison block --------------------------------
+        io_states: list[IOState] | None = found_state.globals.get('io_states', [])
+        for ios in io_states:
+            ios.print_rich()
+            snapshot.add_output(ios)
+
+
     print("\n\n\n")
     snapshot.print_rich()
     print("\n\nDone!\n")

@@ -15,7 +15,7 @@ for module in [
     "ailment",
     "claripy",
 ]:
-    logging.getLogger(module).setLevel(logging.WARNING)
+    logging.getLogger(module).setLevel(logging.ERROR)
 
 
 def logger(name, level=logging.NOTSET) -> logging.Logger:

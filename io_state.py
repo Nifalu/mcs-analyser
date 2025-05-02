@@ -1,5 +1,6 @@
 from claripy import simplify as cl_simplify
 from claripy import ast as cl_ast
+from claripy import And
 from claripy.solvers import Solver as clSolver
 from angr import SimState
 from typing import \
@@ -12,6 +13,10 @@ from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
 from rich.align import Align
+
+from logging import DEBUG, INFO, WARNING, ERROR
+from logger import logger
+log = logger(__name__, level=DEBUG)
 
 class IOState:
     """
@@ -46,7 +51,7 @@ class IOState:
         bv: cl_ast.BV,
         state: "SimState",
         *,
-        simplify: bool = True,          # ← new knob
+        simplify: bool = False,
     ) -> "IOState":
 
         if bv.symbolic:
@@ -74,7 +79,7 @@ class IOState:
         """Return *min*, *max* model of the encapsulated value under its slice."""
         s = solver or clSolver()
         if self.constraints:
-            s.add(*self.constraints)          # safe: list is non-empty
+            s.add(self.constraints)
             lo = s.min(self.bv)
             hi = s.max(self.bv)
         else:
@@ -170,11 +175,11 @@ class IOSnapshot:
     # ------------------------------------------------------------------ #
     # Mutators
     # ------------------------------------------------------------------ #
-    def add_input(self, ios: IOState) -> None:
-        self.inputs.append(ios)
+    def add_input(self, ios: IOState | Iterable[IOState]) -> None:
+        self.inputs.extend(ios) if isinstance(ios, Iterable) else self.inputs.append(ios)
 
-    def add_output(self, ios: IOState) -> None:
-        self.outputs.append(ios)
+    def add_output(self, ios: IOState | Iterable[IOState]) -> None:
+        self.outputs.extend(ios) if isinstance(ios, Iterable) else self.outputs.append(ios)
 
     # ------------------------------------------------------------------ #
     # Pretty-printing with rich

@@ -11,11 +11,7 @@ int main() {
 
     printf("You entered: %u\n", x);
 
-    if ((x > 10 && x < 15) && (y > 20 && y < 25)) {
-        printf("Path A\n");
-    } else {
-        printf("Path B\n");
-    }
+    printf("asd");
 
     return 0;
 }

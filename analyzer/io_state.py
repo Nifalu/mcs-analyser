@@ -1,10 +1,15 @@
+import \
+    itertools
+from dataclasses import \
+    dataclass
+from pathlib import Path
+
 from claripy import simplify as cl_simplify
 from claripy import ast as cl_ast
 from claripy.solvers import Solver as clSolver
 from angr import SimState
 from typing import \
     Iterable, \
-    List, \
     Optional
 
 # pretty printing
@@ -13,9 +18,21 @@ from rich.table import Table
 from rich.panel import Panel
 from rich.align import Align
 
-from logging import DEBUG, INFO, WARNING, ERROR
-from logger import logger
-log = logger(__name__, level=DEBUG)
+from utils.logger import logger
+log = logger(__name__)
+
+
+@dataclass
+class Component:
+    path: Path
+    id: int
+    is_leaf: bool
+    input_mapping: dict[int, int]
+
+@dataclass
+class IOConfig:
+    components: dict[int, Component]
+    leaf_components: set[int]
 
 class IOState:
     """
@@ -29,7 +46,7 @@ class IOState:
                  ):
         self.name = name
         self.bv: cl_ast.BV = bv
-        self.constraints: List[cl_ast.bool] = list(constraints)
+        self.constraints: list[cl_ast.bool] = list(constraints)
 
     @classmethod
     def unconstrained(
@@ -164,21 +181,31 @@ class IOSnapshot:
     def __init__(
         self,
         name: str = "IOSnapshot",
-        inputs: Optional[Iterable[IOState]] = None,
-        outputs: Optional[Iterable[IOState]] = None,
+        inputs: dict[Component, list[IOState]] = None,
+        outputs: dict[Component, list[IOState]] = None,
     ):
         self.name: str = name
-        self.inputs: List[IOState] = list(inputs or [])
-        self.outputs: List[IOState] = list(outputs or [])
+        self.inputs: dict[int, list[IOState]] = inputs or dict()
+        self.outputs: dict[int, list[IOState]] = outputs or dict()
 
     # ------------------------------------------------------------------ #
     # Mutators
     # ------------------------------------------------------------------ #
-    def add_input(self, ios: IOState | Iterable[IOState]) -> None:
-        self.inputs.extend(ios) if isinstance(ios, Iterable) else self.inputs.append(ios)
+    def add_input(self, cid: int, ios: IOState) -> None:
+        """
+        Add a single input IOState to the snapshot, associated with the given component.
+        """
+        if cid not in self.inputs.keys():
+            self.inputs[cid] = []
+        self.inputs[cid].append(ios)
 
-    def add_output(self, ios: IOState | Iterable[IOState]) -> None:
-        self.outputs.extend(ios) if isinstance(ios, Iterable) else self.outputs.append(ios)
+    def add_output(self, cid: int, ios: IOState) -> None:
+        """
+        Add a single output IOState to the snapshot, associated with the given component.
+        """
+        if cid not in self.outputs.keys():
+            self.outputs[cid] = []
+        self.outputs[cid].append(ios)
 
     # ------------------------------------------------------------------ #
     # Pretty-printing with rich
@@ -199,24 +226,25 @@ class IOSnapshot:
         table.add_column("Bits", justify="right")
         table.add_column("Range / Value", justify="right")
 
-        def _row(role: str, state: IOState):
-            if state.is_concrete():
-                val = hex(int(state.bv.args[0]))
-                table.add_row(role, state.name, str(state.bv.length), val)
-            else:
-                lo, hi = state.range()
-                table.add_row(role, state.name, str(state.bv.length),
-                              f"[{hex(lo)}, {hex(hi)}]")
+        def _row(role: str, states: list[IOState]):
+            for state in states:
+                if state.is_concrete():
+                    val = hex(int(state.bv.args[0]))
+                    table.add_row(role, state.name, str(state.bv.length), val)
+                else:
+                    lo, hi = state.range()
+                    table.add_row(role, state.name, str(state.bv.length),
+                                  f"[{hex(lo)}, {hex(hi)}]")
 
-        for ios in self.inputs:
-            _row("[green] → in", ios)
-        for ios in self.outputs:
-            _row("[red] out →", ios)
+        for cid in self.inputs:
+            _row(f"[green] {cid} → in", self.inputs[cid])
+        for cid in self.outputs:
+            _row(f"[red] out → {cid}", self.outputs[cid])
 
         console.print(Align.center(table))
 
         # constraint panels
-        for ios in self.inputs + self.outputs:
+        for ios in itertools.chain(*self.inputs.values(), *self.outputs.values()):
             if ios.constraints:
                 trimmed = []
                 for c in ios.constraints:

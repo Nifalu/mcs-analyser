@@ -1,0 +1,17 @@
+{
+  "components_dir": "./bin",
+  "components": [
+    {
+      "filename": "c1_x86",
+      "id": 1,
+      "is_leaf": true,
+      "input_mapping": {}
+    },
+    {
+      "filename": "c2_x86",
+      "id": 2,
+      "is_leaf": false,
+      "input_mapping": {}
+    }
+  ]
+}

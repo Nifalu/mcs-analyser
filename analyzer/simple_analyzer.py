@@ -1,8 +1,10 @@
-from logger import logger
-from logging import DEBUG, INFO, WARNING, ERROR, CRITICAL
+from utils.logger import logger
 from rich import print
-from io_state import IOState, IOSnapshot
 from pathlib import Path
+from analyzer.io_state import \
+    IOState, \
+    IOSnapshot, \
+    IOConfig
 
 import \
     angr
@@ -12,12 +14,14 @@ from angr import \
 
 import re
 
+from schnauzer import VisualizationClient
+
 BINARY = "./bin/test_x86"
 
 INTERESTING_INPUTS = ['scanf', 'gets', 'read']
 INTERESTING_OUTPUTS = ['printf', 'puts', 'write']
 
-log = logger("SimpleAnalyzer", level=DEBUG)
+log = logger("SimpleAnalyzer")
 
 
 class SimpleAnalyzer:
@@ -27,9 +31,9 @@ class SimpleAnalyzer:
     """
 
     class InputHook(angr.SimProcedure):
-        def __init__(self, inputs):
+        def __init__(self, inputs: list[IOState]) -> None:
             super().__init__()
-            self.inputs = inputs
+            self.inputs: list[IOState] = inputs
 
 
         def run(self, fmt, ptr):
@@ -44,7 +48,8 @@ class SimpleAnalyzer:
             else:
                 log.warning(f"Input count ({input_count}) exceeds number of passed inputs ({len(self.inputs)}). Using default input.")
                 bv_name = f"auto_input_{input_count}"
-                bv = self.state.solver.BVS(bv_name, 32)
+                bv = self.state.solver.BVS(bv_name, 64)
+                self.inputs.append(IOState(bv_name, bv, []))
 
 
             # store the value in the memory location pointed to by ptr
@@ -58,14 +63,14 @@ class SimpleAnalyzer:
 
             return 1
 
-
-    def __init__(self, binary: str, inputs: list[IOState]) -> None:
+    def __init__(self, binary: str | Path, inputs: list[IOState], config: IOConfig) -> None:
         """
         Initialize the SimpleAnalyzer with the binary to analyze.
         :param binary: Path to the binary file.
         """
         self.binary = binary
         self.inputs = inputs
+        self.config = config
         self.proj = angr.Project(self.binary, auto_load_libs=False)
         self.cfg = self.proj.analyses.CFGEmulated()
 
@@ -221,80 +226,137 @@ class SimpleAnalyzer:
         Save symbolic outputs into state.globals['output_constraints'].
         """
 
-        call_target = state.inspect.function_address  # address of the function being called
+        call_target = state.inspect.function_address
         concrete_call_target = state.solver.eval(call_target, cast_to=int)
         log.debug(f"Checking if {concrete_call_target} is in {output_func_addrs}")
 
         if concrete_call_target not in output_func_addrs:
             log.debug(f"It is not. Skipping...")
-            return  # not an interesting output function
+            return
 
         log.info(f"Output function called at {concrete_call_target:#x}")
 
-        arch_name = state.arch.name.lower()
-
-        if 'x86' in arch_name:
-            #format_str_ptr = state.memory.load(state.regs.esp + 4, state.arch.bytes)
-            output_value = state.memory.load(state.regs.esp + 8, state.arch.bytes)
-        elif 'amd64' in arch_name:
-            #format_str_ptr = state.regs.rdi
-            output_value = state.regs.rsi
-        else:
-            log.warning(f"Architecture {arch_name} not handled for argument fetching.")
-            return
-
-
-        if state.solver.symbolic(output_value):
-            log.info(f"Output argument is symbolic! Expr: {output_value}")
-            if 'output_constraints' not in state.globals:
-                state.globals['output_constraints'] = []
-            state.globals['output_constraints'].append(
-                (f'output_{concrete_call_target:x}', output_value)
-            )
-        else:
-            concrete_val = state.solver.eval(output_value, cast_to=int)
-            log.info(f"Output argument is concrete: {concrete_val}")
-            if 'output_constraints' not in state.globals:
-                state.globals['output_constraints'] = []
-            state.globals['output_constraints'].append(
-                (f'output_{concrete_call_target:x}', output_value)
-            )
-
-        if 'io_states' not in state.globals:
-                state.globals['io_states'] = []
+        # Get format string to determine number of arguments
+        format_str_ptr = self._get_format_string_ptr(state)
         try:
-            ios = IOState.from_state(f"{self.binary}_out_{concrete_call_target:x}", output_value, state)
-            state.globals['io_states'].append(ios)
-            log.info(f"Captured IOState: {ios} with value {output_value} and constraints {ios.constraints}")
-            log.info(f"state constraints were {state.solver.constraints}")
-        except ValueError as e:
-            log.exception(f"Error creating IOState:", e)
-            return
+            format_str = state.solver.eval(state.memory.load(format_str_ptr, 1024), cast_to=bytes)
+            format_str = format_str.split(b'\x00')[0].decode('utf-8', errors='ignore')
+            num_args = self._count_format_specifiers(format_str)
+            log.debug(f"Format string: '{format_str}', expecting {num_args} arguments")
+        except:
+            # If we can't parse format string, assume a reasonable default
+            num_args = 2  # or make this configurable
+            log.warning("Could not parse format string, assuming 2 arguments")
+
+        # Get all arguments
+        args = self._get_printf_args(state, num_args)
+
+        # Initialize globals if needed
+        if 'output_constraints' not in state.globals:
+            state.globals['output_constraints'] = []
+        if 'io_states' not in state.globals:
+            state.globals['io_states'] = []
+
+        # Process each argument
+        for i, output_value in enumerate(args):
+            if state.solver.symbolic(output_value):
+                log.info(f"Output argument {i} is symbolic! Expr: {output_value}")
+            else:
+                concrete_val = state.solver.eval(output_value, cast_to=int)
+                log.info(f"Output argument {i} is concrete: {concrete_val}")
+
+            # Store constraint with index
+            constraint_name = f'output_{concrete_call_target:x}_arg{i}'
+            state.globals['output_constraints'].append((constraint_name, output_value))
+
+            # Create IOState for each argument
+            try:
+                ios = IOState.from_state(
+                    f"{self.binary}_out_{concrete_call_target:x}_arg{i}",
+                    output_value,
+                    state
+                )
+                state.globals['io_states'].append(ios)
+                log.info(f"Captured IOState for arg {i}: {ios}")
+            except ValueError as e:
+                log.exception(f"Error creating IOState for arg {i}:", e)
+
+    def _get_format_string_ptr(self, state):
+        """Get the format string pointer based on architecture"""
+        arch_name = state.arch.name.lower()
+        if 'x86' in arch_name and '64' not in arch_name:
+            return state.memory.load(state.regs.esp + 4, 4)
+        elif 'amd64' in arch_name or 'x86_64' in arch_name:
+            return state.regs.rdi
+        else:
+            raise NotImplementedError(f"Architecture {arch_name} not supported")
+
+    def _count_format_specifiers(self, format_str):
+        """Count format specifiers in a format string"""
+        import re
+        # Match format specifiers like %d, %u, %x, %s, etc.
+        # Ignore escaped %%
+        format_str = format_str.replace('%%', '')
+        specifiers = re.findall(r'%[diouxXeEfFgGaAcspn]', format_str)
+        return len(specifiers)
+
+    def _get_printf_args(self, state, num_args):
+        """Get printf arguments based on calling convention"""
+        arch_name = state.arch.name.lower()
+        args = []
+
+        if 'x86' in arch_name and '64' not in arch_name:
+            # x86 32-bit: all args on stack after format string
+            for i in range(num_args):
+                arg_addr = state.regs.esp + 8 + (i * 4)  # esp+4 is format string
+                args.append(state.memory.load(arg_addr, 4))
+
+        elif 'amd64' in arch_name or 'x86_64' in arch_name:
+            # x86_64: first 6 args in registers (rdi has format string)
+            reg_args = ['rsi', 'rdx', 'rcx', 'r8', 'r9']
+
+            for i in range(num_args):
+                if i < len(reg_args):
+                    args.append(getattr(state.regs, reg_args[i]))
+                else:
+                    # Additional arguments on stack
+                    stack_offset = (i - len(reg_args)) * 8
+                    args.append(state.memory.load(state.regs.rsp + stack_offset, 8))
+
+        else:
+            log.warning(f"Architecture {arch_name} not handled")
+            return []
+
+        return args
 
 
     def analyze(self) -> IOSnapshot:
-
-        # Find interesting functions in the binary (i.E scanf, printf, etc.)
         in_addrs, out_addrs = self.find_interesting_functions()
-        # Capture the call states of those to correctly set up the entry states
         entry_states = self.capture_call_states(in_addrs, num_find=10)
-        # Hook the interesting functions in the binary
         self.hook_interesting_functions(in_addrs)
-
-        # Prepare a snapshot to store the results of this analysis
         snapshot = IOSnapshot(f"Binary {self.binary}")
-        snapshot.add_input(self.inputs)
 
-        # Iterate over the entry states and find all solutions for each
-        all_solutions = []
+        all_solutions: list[SimState] = []
         for state in entry_states:
             all_solutions.extend(self.find_all_solutions(state, out_addrs, max_solutions=10))
 
-        # Add the outputs + constraints to the snapshot
-        for i, found_state in enumerate(all_solutions):
-            snapshot.add_output(found_state.globals.get('io_states', []))
+        for solution in all_solutions:
+            io_states: list[IOState] = solution.globals.get('io_states', [])
+
+            if len(io_states) < 2:
+                log.error("A valid solution must always output a 'targetId' and a 'msg'... skipping!")
+                continue
+            if io_states[0].is_symbolic():
+                log.error("The target ID must be concrete, skipping this solution!")
+                continue
+
+            target = io_states[0].bv.concrete_value
+            for ios in io_states[1:]:
+                snapshot.add_output(target, ios)
 
         return snapshot
+
+
 
 
 
@@ -305,6 +367,10 @@ def main():
 
     sa = SimpleAnalyzer(BINARY, [initial_input])
 
+    vc = VisualizationClient()
+    vc.send_graph(sa.cfg.graph, sa.binary)
+
+    """
     # Find interesting functions in the binary (i.E scanf, printf, etc.)
     in_addrs, out_addrs = sa.find_interesting_functions()
     # Capture the call states of those to correctly set up the entry states
@@ -321,7 +387,10 @@ def main():
     for state in entry_states:
         all_solutions.extend(sa.find_all_solutions(state, out_addrs, max_solutions=10))
 
+    print_solutions(all_solutions, snapshot)
+    """
 
+def print_solutions(all_solutions: list[SimState], snapshot: IOSnapshot) -> None:
     for i, found_state in enumerate(all_solutions):
         print(f"\nSolution {i+1}:")
         sym_vars = found_state.globals.get('inputs', [])

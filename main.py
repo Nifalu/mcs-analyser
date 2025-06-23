@@ -1,3 +1,4 @@
+from analyzer.MCSAnalyser import mainA
 from utils.logger import logger, set_project_log_level, set_dependency_log_level
 from logging import DEBUG, INFO, WARNING, ERROR, CRITICAL
 set_project_log_level(DEBUG)
@@ -13,9 +14,10 @@ COMPONENTS_DIR = Path(__file__).parent / "bin"
 COMPONENT_DICT = {
     1: 'c1',
     2: 'c2',
+    3: 'c3',
+    4: 'c4',
+    5: 'c5',
 }
-
-LEAF_COMPONENTS = ["c0-0", "c0-1"]
 
 def get_component_paths() -> list[Path]:
     """
@@ -35,10 +37,12 @@ def get_component_paths() -> list[Path]:
 
 
 
-
 def main():
-    co = Coordinator()
-    co.run()
+    #co = Coordinator()
+    #co.run()
+    mainA()
+
+
 
 
 

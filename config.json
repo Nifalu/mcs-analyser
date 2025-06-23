@@ -1,17 +1,41 @@
 {
+  "var_length": 64,
+  "input_hooks": ["scanf", "gets", "read"],
+  "output_hooks": ["printf", "puts", "write"],
   "components_dir": "./bin",
   "components": [
     {
       "filename": "c1_x86",
       "id": 1,
       "is_leaf": true,
-      "input_mapping": {}
+      "input_order": {}
     },
     {
       "filename": "c2_x86",
       "id": 2,
       "is_leaf": false,
-      "input_mapping": {}
+      "input_order": {}
+    },
+    {
+      "filename": "c3_x86",
+      "id": 3,
+      "is_leaf": false,
+      "input_order": {
+        "1":"1",
+        "2":"2"
+      }
+    },
+    {
+      "filename": "c4_x86",
+      "id": 4,
+      "is_leaf": false,
+      "input_order": {}
+    },
+    {
+      "filename": "c5_x86",
+      "id": 5,
+      "is_leaf": false,
+      "input_order": {}
     }
   ]
 }

@@ -10,7 +10,7 @@ from claripy.solvers import Solver as clSolver
 from angr import SimState
 from typing import \
     Iterable, \
-    Optional
+    Callable
 
 # pretty printing
 from rich.console import Console
@@ -120,7 +120,7 @@ class IOState:
         return "\n".join(lines)
 
     def __repr__(self) -> str:  # pragma: no cover
-        return f"<OutputCapsule name={self.name!r} bits={self.bv.length} slice_len={len(self.constraints)}>"
+        return f"<OutputCapsule name={self.name!r} bits={self.bv.length} constraint_length={len(self.constraints)}>"
 
 
     def print_rich(self, max_len: int = 96) -> None:
@@ -164,7 +164,6 @@ class IOState:
             console.print(
                 Panel("\n".join(trimmed), title="Slice constraints", expand=False)
             )
-
 
 class IOSnapshot:
     """

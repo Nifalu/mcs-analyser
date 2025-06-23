@@ -1,15 +1,105 @@
+from networkx import \
+    DiGraph
 from schnauzer import \
     VisualizationClient
 
 from analyzer.io_state import \
+    IOState, \
     IOConfig, \
     Component, \
-    IOState, \
     IOSnapshot
-from analyzer.simple_analyzer import SimpleAnalyzer
 from pathlib import Path
-from networkx import DiGraph
+import json
 
+from dataclasses import dataclass
+
+from analyzer.simple_analyzer import \
+    SimpleAnalyzer
+from utils.logger import logger
+log = logger(__name__)
+
+
+@dataclass
+class Config:
+    default_var_length: int
+    input_hooks: list[str]
+    output_hooks: list[str]
+
+class CANMessage:
+    def __init__(self, dest: IOState, msg_data: IOState):
+        self.dest: IOState = dest
+        self.msg_data: IOState = msg_data
+
+    def __repr__(self):
+        return f"CANMessage(\n  dest={self.dest},\n  msg_data={self.msg_data})"
+
+class CANNode:
+    def __init__(self, cid, path: Path):
+        self.id = cid
+        self.path = path
+        self.bus = None
+
+    def config(self) -> Config:
+        return self.bus.config
+
+    def send(self, msg: CANMessage):
+        if msg.dest.is_symbolic():
+            log.critical(f"Message with symbolic destination!\n[{self.id}] -> [{msg.dest.constraints}]\nmsg:{msg}")
+        self.bus.write(msg)
+
+    def read_all(self):
+        return self.bus.read_all()
+
+    def __repr__(self):
+        return f'CANNode({self.id}, {self.path})'
+
+    def __str__(self):
+        return f'CANNode({self.id}, {self.path})'
+
+
+class CANBus:
+    def __init__(self, path: Path):
+        self.nodes: list[CANNode] = []
+        self.buffer: list[CANMessage] = []
+        self.config: Config = self._build(path)
+
+    def register(self, node: CANNode):
+        self.nodes.append(node)
+        node.bus = self
+
+    def write(self, msg: CANMessage):
+        self.buffer.append(msg)
+
+    def read_all(self) -> list[CANMessage]:
+        return self.buffer
+
+    def _build(self, path: Path) -> Config:
+        with open(path, 'r') as f:
+            data = json.load(f)
+        components_dir = Path(data['components_dir'])
+        for comp in data['components']:
+            node = CANNode(
+                cid=int(comp['id']),
+                path=Path(components_dir, comp['filename'])
+            )
+            self.register(node)
+
+        return Config(data['var_length'],
+               data['input_hooks'],
+               data['output_hooks']
+        )
+
+    def display(self):
+        s = "-- CAN-Bus -- \n subscribers:\n"
+        for node in self.nodes:
+            s += f" - {node}\n"
+        return s
+
+    def __repr__(self):
+        return self.display()
+
+    def __str__(self):
+        return self.display()
 
 
 class Coordinator:

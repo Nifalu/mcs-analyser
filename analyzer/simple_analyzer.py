@@ -140,11 +140,11 @@ class SimpleAnalyzer:
         """
         found_funcs = set()
 
-        log.info(f"Searching for functions matching pattern: {pattern.pattern}")
+        log.debug(f"Searching for functions matching pattern: {pattern.pattern}")
 
         for func in self.cfg.kb.functions.values():
             if func.name and pattern.search(func.name):
-                log.info(f"{func.name.ljust(15)} at {func.addr:#x}")
+                log.debug(f"{func.name.ljust(15)} at {func.addr:#x}")
                 found_funcs.add(func.addr)
 
         if not found_funcs:
@@ -165,20 +165,19 @@ class SimpleAnalyzer:
         initial_state: SimState = self.proj.factory.entry_state()
         simgr: SimulationManager = self.proj.factory.simgr(initial_state)
 
-        log.info(f"Capturing call states")
+        log.debug(f"Capturing call states")
 
         call_states = []
         for addr in func_addrs:
-            log.info(f"Exploring from {initial_state.addr:#x} to {addr:#x}")
+            log.debug(f"Exploring from {initial_state.addr:#x} to {addr:#x}")
             simgr.explore(find=addr, num_find=num_find, cfg=self.cfg)
             if not simgr.found:
                 log.warning(f"Could not reach function addr at {addr:#x}")
             else:
-                log.info(f"Found {len(simgr.found)} states that call {addr:#x}")
+                log.debug(f"Found {len(simgr.found)} states that call {addr:#x}")
                 call_states.extend(simgr.found)
 
         return simgr.found
-
 
     def find_all_solutions(self, entry_state: SimState, targets: list[int], max_solutions: int = 5) -> set[SimState]:
         """
@@ -199,7 +198,7 @@ class SimpleAnalyzer:
 
         simgr: SimulationManager = self.proj.factory.simgr(entry_state)
 
-        log.info(f"Finding all solutions from {entry_state.addr:#x}")
+        log.debug(f"Finding all solutions from {entry_state.addr:#x}")
 
         simgr.explore(
             find=targets,
@@ -207,7 +206,7 @@ class SimpleAnalyzer:
             num_find=max_solutions,
         )
 
-        log.info(f"Found {len(simgr.found)} solutions")
+        log.debug(f"Found {len(simgr.found)} solutions")
 
         if len(simgr.found) == max_solutions:
             log.warning(f"Found {max_solutions} solutions, consider increasing the max_solutions parameter.")
@@ -234,7 +233,7 @@ class SimpleAnalyzer:
             log.debug(f"It is not. Skipping...")
             return
 
-        log.info(f"Output function called at {concrete_call_target:#x}")
+        log.debug(f"Output function called at {concrete_call_target:#x}")
 
         # Get format string to determine number of arguments
         format_str_ptr = self._get_format_string_ptr(state)

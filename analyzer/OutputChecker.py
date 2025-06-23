@@ -3,10 +3,7 @@ import angr
 import logging
 from analyzer.OutputParser import OutputParserRegistry, OutputFunctionParser
 
-from analyzer.coordinator import \
-    CANMessage
-from analyzer.io_state import \
-    IOState
+from analyzer.io_state import IOState
 
 log = logging.getLogger(__name__)
 
@@ -55,7 +52,7 @@ class OutputChecker:
             return
 
         if len(args) != 2:
-            log.error(f"Irregular output format {args}")
+            log.error(f"Irregular output format {args} for state {hex(state.addr)}")
             return
 
         dest: IOState = IOState.from_state(
@@ -67,15 +64,10 @@ class OutputChecker:
         msg_data: IOState = IOState.from_state(
             f"{self.binary}_out_{hex(concrete_call_target)}_msg",
             args[1],
-            state
+            state.copy()
         )
 
-        can_msg = CANMessage(
-            dest=dest,
-            msg_data=msg_data,
-        )
-
-        callback(can_msg)
+        callback(dest, msg_data)
 
 
 # Example usage:

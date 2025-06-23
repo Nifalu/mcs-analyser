@@ -1,4 +1,3 @@
-from analyzer.MCSAnalyser import mainA
 from utils.logger import logger, set_project_log_level, set_dependency_log_level
 from logging import DEBUG, INFO, WARNING, ERROR, CRITICAL
 set_project_log_level(DEBUG)
@@ -38,9 +37,8 @@ def get_component_paths() -> list[Path]:
 
 
 def main():
-    #co = Coordinator()
-    #co.run()
-    mainA()
+    co = Coordinator()
+    co.run()
 
 
 

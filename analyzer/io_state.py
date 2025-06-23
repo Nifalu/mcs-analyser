@@ -1,16 +1,12 @@
-import \
-    itertools
-from dataclasses import \
-    dataclass
+import itertools
+from dataclasses import dataclass
 from pathlib import Path
 
 from claripy import simplify as cl_simplify
 from claripy import ast as cl_ast
 from claripy.solvers import Solver as clSolver
 from angr import SimState
-from typing import \
-    Iterable, \
-    Callable
+from typing import Iterable
 
 # pretty printing
 from rich.console import Console
@@ -46,7 +42,7 @@ class IOState:
                  ):
         self.name = name
         self.bv: cl_ast.BV = bv
-        self.constraints: list[cl_ast.bool] = list(constraints)
+        self.constraints: list[cl_ast.Bool] = list(constraints)
 
     @classmethod
     def unconstrained(

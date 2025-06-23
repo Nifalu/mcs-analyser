@@ -1,4 +1,3 @@
-# output_parsers.py
 from abc import ABC, abstractmethod
 import angr
 import re
@@ -35,6 +34,7 @@ class PrintfParser(OutputFunctionParser):
         return func_name in self.printf_functions
 
     def parse_arguments(self, state: angr.SimState) -> List[any]:
+        log.warning(f"parsing arguments for {hex(state.addr)}")
         format_str_ptr = self._get_format_string_ptr(state)
 
         try:

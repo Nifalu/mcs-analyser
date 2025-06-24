@@ -196,6 +196,8 @@ class SimpleAnalyzer:
             action=lambda state: self.check_output(state, targets)
         )
 
+
+
         simgr: SimulationManager = self.proj.factory.simgr(entry_state)
 
         log.debug(f"Finding all solutions from {entry_state.addr:#x}")
@@ -227,16 +229,18 @@ class SimpleAnalyzer:
 
         call_target = state.inspect.function_address
         concrete_call_target = state.solver.eval(call_target, cast_to=int)
-        log.debug(f"Checking if {concrete_call_target} is in {output_func_addrs}")
+        log.debug(f"Breakpoint on 'call' instruction triggered:")
+        log.debug(f"  Current state addr: {hex(state.addr)}")
+        log.debug(f"  Call target: {hex(concrete_call_target)}")
+        log.debug(f"  Parent addr: {hex(state.history.parent.addr) if state.history.parent else 'No parent'}")
 
         if concrete_call_target not in output_func_addrs:
             log.debug(f"It is not. Skipping...")
             return
 
-        log.debug(f"Output function called at {concrete_call_target:#x}")
-
-        # Get format string to determine number of arguments
+        log.warning(f"--- Parsing arguments for {hex(state.addr)} ---")
         format_str_ptr = self._get_format_string_ptr(state)
+        log.warning(f"Got format string ptr: {format_str_ptr}")
         try:
             format_str = state.solver.eval(state.memory.load(format_str_ptr, 1024), cast_to=bytes)
             format_str = format_str.split(b'\x00')[0].decode('utf-8', errors='ignore')
@@ -286,6 +290,24 @@ class SimpleAnalyzer:
         if 'x86' in arch_name and '64' not in arch_name:
             return state.memory.load(state.regs.esp + 4, 4)
         elif 'amd64' in arch_name or 'x86_64' in arch_name:
+            log.warning("in amd64 architecture")
+            log.debug(f"rdi: {hex(state.solver.eval(state.regs.rdi, cast_to=int))}")
+            log.debug(f"rsi: {hex(state.solver.eval(state.regs.rsi, cast_to=int))}")
+            log.debug(f"rdx: {hex(state.solver.eval(state.regs.rdx, cast_to=int))}")
+            try:
+                first_bytes = state.solver.eval(state.memory.load(state.regs.rdi, 32), cast_to=bytes)
+                log.debug(f"First 32 bytes at rdi: {first_bytes}")
+            except:
+                log.debug("Could not read memory at rdi")
+
+            try:
+                # Get the block to see instructions around the call
+                block = state.block()
+                log.warning(f"Instructions in block:")
+                for insn in block.capstone.insns:
+                    log.warning(f"  {hex(insn.address)}: {insn.mnemonic} {insn.op_str}")
+            except:
+                pass
             return state.regs.rdi
         else:
             raise NotImplementedError(f"Architecture {arch_name} not supported")

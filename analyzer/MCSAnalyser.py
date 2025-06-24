@@ -42,11 +42,12 @@ class MCSAnalyser:
 
     def analyse(self) -> None:
         input_addrs = self._find_addr(self.component.config().input_hooks)
-        entry_points = self._get_sim_states(input_addrs.values())
+        entry_points = self._get_sim_states(input_addrs.keys())
         self.output_addrs = self._find_addr(self.component.config().output_hooks)
+        log.warning(f"Found Output Addresses: {[hex(addr) for addr in self.output_addrs.keys()]}")
         self.output_checker = setup_output_checker(str(self.component.path), self.output_addrs)
 
-        for addr in input_addrs.values():
+        for addr in input_addrs.keys():
             self.proj.hook(addr, InputHook(self.yield_input)) if not self.proj.is_hooked(addr) else None
 
         if self.run_with_unconstrained_inputs:
@@ -65,15 +66,25 @@ class MCSAnalyser:
 
             entry_point.inspect.b(
                 'call',
-                when=angr.BP_BEFORE,
-                action=lambda state: self.output_checker.check_output(state, self.output_addrs.values(), self.store_result_callback)
+                when=angr.BP_AFTER,
+                action=lambda state: self.output_checker.check_output(state, self.output_addrs.keys(), self.store_result_callback)
             )
-            self._get_sim_states(self.output_addrs.values(), entry_point.copy())
+            simgr: SimulationManager = self.proj.factory.simgr(entry_point)
 
+            log.debug(f"Finding all solutions from {entry_point.addr:#x}")
+
+            simgr.explore(
+                find=list(self.output_addrs.keys()),
+                cfg=self.cfg,
+                num_find=10_000,
+            )
+
+            log.debug(f"Found {len(simgr.found)} solutions")
+
+            #self._get_sim_states(self.output_addrs.values(), ep_copy)
 
     def store_result_callback(self, dest: IOState, msg_data: IOState) -> None:
         self.component.send(Message(self.component.id, dest, msg_data))
-
 
     def yield_input(self):
         """
@@ -102,12 +113,14 @@ class MCSAnalyser:
 
         for func in self.cfg.kb.functions.values():
             if func.name and pattern.search(func.name):
-                section = self.proj.loader.find_section_containing(func.addr)
-                if section and section.is_executable:
-                    log.debug(f"Found {func.name} at {hex(func.addr)}")
-                    found[func.name] = func.addr
-                else:
-                    log.debug(f"Ignoring {func.name} at {hex(func.addr)} as it is not executable. Probably a GOT entry")
+                #section = self.proj.loader.find_section_containing(func.addr)
+                log.debug(f"Found {func.name} at {hex(func.addr)}")
+                found[func.addr] = func.name
+                # if section and section.is_executable:
+                #     log.debug(f"Found {func.name} at {hex(func.addr)}")
+                #     found[func.addr] = func.name
+                # else:
+                #     log.debug(f"Ignoring {func.name} at {hex(func.addr)} as it is not executable. Probably a GOT entry")
         if not found:
             log.warning(f"No addresses found for {pattern}")
         return found

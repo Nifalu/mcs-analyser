@@ -11,6 +11,7 @@ class Config:
     default_var_length: int
     input_hooks: list[str]
     output_hooks: list[str]
+    leafs: list[str]
 
 class Message:
     def __init__(self, source: int, dest: IOState, msg_data: IOState):
@@ -68,7 +69,11 @@ class CANBus:
         with open(path, 'r') as f:
             data = load(f)
         components_dir = Path(data['components_dir'])
+        leafs = []
         for comp in data['components']:
+            if comp['is_leaf']:
+                leafs.append(comp['id'])
+
             component = Component(
                 cid=int(comp['id']),
                 path=Path(components_dir, comp['filename'])
@@ -76,8 +81,9 @@ class CANBus:
             self.register(component)
 
         return Config(data['var_length'],
-               data['input_hooks'],
-               data['output_hooks']
+            data['input_hooks'],
+            data['output_hooks'],
+            leafs
         )
 
     def display(self):

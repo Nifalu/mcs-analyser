@@ -91,7 +91,7 @@ class Coordinator:
             "concrete": "#DE3163"
         }
         node_labels = ['type', 'path']
-        edge_labels = ['type', 'source', 'target', 'bv', 'value', 'constraitns']
+        edge_labels = ['type', 'source', 'target', 'bv', 'value', 'constraints']
         vc.send_graph(
             self.bus.graph,
             node_labels=node_labels,

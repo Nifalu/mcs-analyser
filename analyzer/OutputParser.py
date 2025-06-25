@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 import angr
 import re
-from typing import List, Tuple, Optional
+from typing import List, Optional
 import logging
 
 log = logging.getLogger(__name__)
@@ -34,9 +34,7 @@ class PrintfParser(OutputFunctionParser):
         return func_name in self.printf_functions
 
     def parse_arguments(self, state: angr.SimState) -> List[any]:
-        log.warning(f"--- Parsing arguments for {hex(state.addr)} ---")
         format_str_ptr = self._get_format_string_ptr(state)
-        log.warning(f"Got format string ptr: {format_str_ptr}")
         try:
             format_str = state.solver.eval(state.memory.load(format_str_ptr, 1024), cast_to=bytes)
             format_str = format_str.split(b'\x00')[0].decode('utf-8', errors='ignore')
@@ -55,24 +53,6 @@ class PrintfParser(OutputFunctionParser):
             log.warning("in x86 architecture")
             return state.memory.load(state.regs.esp + 4, 4)
         elif 'amd64' in arch_name or 'x86_64' in arch_name:
-            log.warning("in amd64 architecture")
-            log.debug(f"rdi: {hex(state.solver.eval(state.regs.rdi, cast_to=int))}")
-            log.debug(f"rsi: {hex(state.solver.eval(state.regs.rsi, cast_to=int))}")
-            log.debug(f"rdx: {hex(state.solver.eval(state.regs.rdx, cast_to=int))}")
-            try:
-                first_bytes = state.solver.eval(state.memory.load(state.regs.rdi, 32), cast_to=bytes)
-                log.debug(f"First 32 bytes at rdi: {first_bytes}")
-            except:
-                log.debug("Could not read memory at rdi")
-
-            try:
-                # Get the block to see instructions around the call
-                block = state.block()
-                log.warning(f"Instructions in block:")
-                for insn in block.capstone.insns:
-                    log.warning(f"  {hex(insn.address)}: {insn.mnemonic} {insn.op_str}")
-            except:
-                pass
             return state.regs.rdi
         else:
             raise NotImplementedError(f"Architecture {arch_name} not supported")
@@ -110,57 +90,12 @@ class PrintfParser(OutputFunctionParser):
         return args
 
 
-class PutsParser(OutputFunctionParser):
-    """Parser for puts function"""
-
-    def can_handle(self, func_name: str, func_addr: int) -> bool:
-        return func_name == 'puts'
-
-    def parse_arguments(self, state: angr.SimState) -> List[any]:
-        arch_name = state.arch.name.lower()
-
-        if 'x86' in arch_name and '64' not in arch_name:
-            # x86 32-bit: argument on stack
-            return [state.memory.load(state.regs.esp + 4, 4)]
-        elif 'amd64' in arch_name or 'x86_64' in arch_name:
-            # x86_64: first argument in rdi
-            return [state.regs.rdi]
-        else:
-            log.warning(f"Architecture {arch_name} not handled")
-            return []
-
-
-class WriteParser(OutputFunctionParser):
-    """Parser for write/send system calls"""
-
-    def can_handle(self, func_name: str, func_addr: int) -> bool:
-        return func_name in ['write', 'send']
-
-    def parse_arguments(self, state: angr.SimState) -> List[any]:
-        arch_name = state.arch.name.lower()
-
-        if 'x86' in arch_name and '64' not in arch_name:
-            # x86 32-bit: args on stack
-            fd = state.memory.load(state.regs.esp + 4, 4)
-            buf = state.memory.load(state.regs.esp + 8, 4)
-            count = state.memory.load(state.regs.esp + 12, 4)
-            return [fd, buf, count]
-        elif 'amd64' in arch_name or 'x86_64' in arch_name:
-            # x86_64: args in rdi, rsi, rdx
-            return [state.regs.rdi, state.regs.rsi, state.regs.rdx]
-        else:
-            log.warning(f"Architecture {arch_name} not handled")
-            return []
-
-
 class OutputParserRegistry:
     """Registry for output function parsers"""
 
     def __init__(self):
-        self.parsers = [
+        self.parsers: list[OutputFunctionParser] = [
             PrintfParser(),
-            PutsParser(),
-            WriteParser(),
         ]
         self.address_to_name = {}  # Cache for address -> function name mapping
 

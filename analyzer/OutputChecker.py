@@ -30,14 +30,7 @@ class OutputChecker:
         """
         call_target = state.inspect.function_address
         concrete_call_target = state.solver.eval(call_target, cast_to=int)
-        # More precise debugging
-        log.debug(f"Breakpoint on 'call' instruction triggered:")
-        log.debug(f"  Current state addr: {hex(state.addr)}")
-        log.debug(f"  Call target: {hex(concrete_call_target)}")
-        log.debug(f"  Parent addr: {hex(state.history.parent.addr) if state.history.parent else 'No parent'}")
-
         if concrete_call_target not in output_func_addrs:
-            log.debug(f"It is not. Skipping...")
             return
 
         log.debug(f"Output function called at {hex(concrete_call_target)}")
@@ -74,7 +67,6 @@ class OutputChecker:
         callback(dest, msg_data)
 
 
-# Example usage:
 def setup_output_checker(binary_path: str, output_addrs) -> OutputChecker:
     """Set up the output checker with known functions"""
     checker = OutputChecker(binary_path)
@@ -83,8 +75,8 @@ def setup_output_checker(binary_path: str, output_addrs) -> OutputChecker:
         try:
             # Try to resolve function address from PLT
             checker.register_output_function(addr, name)
-            log.info(f"Registered {name} at {hex(addr)}")
+            log.debug(f"Registered {name} at {hex(addr)}")
         except:
-            log.debug(f"Could not resolve {name}")
+            log.warning(f"Could not find an output parser for {name}")
 
     return checker

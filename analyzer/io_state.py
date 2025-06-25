@@ -2,6 +2,8 @@ import itertools
 from dataclasses import dataclass
 from pathlib import Path
 
+import \
+    claripy
 from claripy import simplify as cl_simplify
 from claripy import ast as cl_ast
 from claripy.solvers import Solver as clSolver
@@ -98,6 +100,54 @@ class IOState:
             lo, hi = 0, (1 << self.bv.length) - 1   # fully unconstrained
 
         return lo, hi
+    
+    def equals(self, other: "IOState") -> bool:
+        """
+        Check if two IOState objects have constraints that define the same solution space.
+        
+        Returns True if (C1 ∧ ¬C2) is unsat AND (C2 ∧ ¬C1) is unsat.
+        """
+        # Early checks
+        if not self.constraints and not other.constraints:
+            return True  # Both unconstrained
+        
+        if bool(self.constraints) != bool(other.constraints):
+            return False  # One constrained, one not
+        
+        # Check if both are concrete and compare values
+        if self.is_concrete() and other.is_concrete():
+            return self.bv.concrete_value == other.bv.concrete_value
+        
+        if self.is_concrete() != other.is_concrete():
+            return False  # One concrete, one symbolic
+        
+        # Main check: (C1 ∧ ¬C2) is unsat AND (C2 ∧ ¬C1) is unsat
+        
+        # Check (C1 ∧ ¬C2)
+        solver1 = claripy.Solver()
+        for c in self.constraints:
+            solver1.add(c)
+        
+        if other.constraints:
+            c2_conjunction = claripy.And(*other.constraints) if len(other.constraints) > 1 else other.constraints[0]
+            solver1.add(claripy.Not(c2_conjunction))
+        
+        if solver1.satisfiable():
+            return False  # Found a solution in C1 but not in C2
+        
+        # Check (C2 ∧ ¬C1)
+        solver2 = claripy.Solver()
+        for c in other.constraints:
+            solver2.add(c)
+        
+        if self.constraints:
+            c1_conjunction = claripy.And(*self.constraints) if len(self.constraints) > 1 else self.constraints[0]
+            solver2.add(claripy.Not(c1_conjunction))
+        
+        if solver2.satisfiable():
+            return False  # Found a solution in C2 but not in C1
+        
+        return True  # Both checks passed, constraints are equivalent
 
     def pretty(self, max_len: int = 96) -> str:
         if self.is_concrete():

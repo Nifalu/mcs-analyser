@@ -1,3 +1,6 @@
+from collections import \
+    deque
+
 from networkx.classes import \
     MultiDiGraph
 from schnauzer import VisualizationClient
@@ -26,6 +29,81 @@ class Coordinator:
         self.graph = None
         self.bus = CANBus(config_path)
         self.old_config = _parse(config_path)
+
+
+    def run(self):
+        """
+        Run the simulation
+        :return:
+        """
+
+
+
+        initial_graph = self.bus.graph.copy() # local reference for better readability
+        graph = self.bus.graph
+
+        # Analyse all components with unconstrained input to get an initial graph
+        # We also count the inputs here to reduce the possible input combinations.
+        for component in self.bus.components:
+            MCSAnalyser(component, run_with_unconstrained_inputs=True, count_inputs=True).analyse() # this automatically updates self.graph
+
+        self.bus.buffer = [] # reset the buffer
+        leaf_nodes = {n for n in graph.nodes() if graph.in_degree(n) == 0}
+
+        self.bus.buffer = [] # clear messages on the bus
+
+        # reset the graph
+        self.bus.graph = MultiDiGraph()
+        graph = self.bus.graph
+
+        # analyze the leaf components first
+        for node in leaf_nodes:
+            component = initial_graph.nodes[node]['component']
+            MCSAnalyser(component, run_with_unconstrained_inputs=True).analyse()
+
+
+        analyzed = list(leaf_nodes)
+        analyzed.append(0)
+        print(analyzed)
+        while len(analyzed) < len(self.bus.components) + 1:
+            for node in graph.nodes():
+                if node in analyzed:
+                    continue
+                predecessors = set(graph.predecessors(node))
+                if not predecessors.issubset(analyzed):
+                    continue
+
+
+                print(f"Would analyze {node} with {len(self.bus.read_all())} possible inputs")
+                component = initial_graph.nodes[node]['component']
+                print(component)
+                MCSAnalyser(component).analyse()
+                analyzed.append(node)
+
+        vc = VisualizationClient()
+        type_color_map = {
+            # Nodes
+            "input": "#9FE2BF",
+            "output": "#CCCCFF",
+            "component": "#6495ED",
+            # Edges
+            "symbolic": "#FFBF00",
+            "concrete": "#DE3163"
+        }
+        node_labels = ['type', 'path']
+        edge_labels = ['type', 'source', 'target', 'bv', 'value', 'constraitns']
+        vc.send_graph(
+            self.bus.graph,
+            node_labels=node_labels,
+            edge_labels=edge_labels,
+            type_color_map=type_color_map
+        )
+
+
+
+
+
+
 
 
     def run_simple(self):
@@ -83,50 +161,6 @@ class Coordinator:
         }
         vc.send_graph(self.graph, type_color_map=type_color_map)
 
-
-
-    def run(self):
-
-        for idx, component in enumerate(self.bus.components):
-            self.bus.graph.add_node("Unconstrained Input")
-            self.bus.graph.add_edge("Unconstrained Input", component.id)
-            MCSAnalyser(component, True).analyse()
-
-        """
-        while queue:
-            origin_snapshot = queue.pop(0)
-            for cid, values in origin_snapshot.outputs.items():
-                if cid in self.config.leaf_components:
-                    raise ValueError(f"Unexpected leaf component {cid} in queue. This should not happen.")
-                if cid == 0:  # We have reached the root
-                    self.graph.add_node(f"output_{cid}", type="output")
-                    for v in values:
-                        t = "symbolic" if v.is_symbolic else "concrete"
-                        self.graph.add_edge(origin_snapshot.name, f"output_{cid}", type=t)
-                    continue
-
-                c = self.config.components[cid]
-                sa = SimpleAnalyzer(c.path, values, self.config)
-                new_snapshot = sa.analyze()
-                self.graph.add_node(new_snapshot.name, type="component")
-                for v in values:
-                    new_snapshot.add_input(cid, v)
-                    t = "symbolic" if v.is_symbolic else "concrete"
-                    self.graph.add_edge(origin_snapshot.name, new_snapshot.name, type=t)
-                new_snapshot.print_rich()
-                queue.append(new_snapshot)
-        """
-        vc = VisualizationClient()
-        type_color_map = {
-            # Nodes
-            "input": "#9FE2BF",
-            "output": "#CCCCFF",
-            "component": "#6495ED",
-            # Edges
-            "symbolic": "#FFBF00",
-            "concrete": "#DE3163"
-        }
-        vc.send_graph(self.bus.graph, type_color_map=type_color_map)
 
 
 def _parse(path: Path) -> IOConfig:

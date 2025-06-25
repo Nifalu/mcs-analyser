@@ -9,7 +9,7 @@ logging.basicConfig(
     level=_PROJECT_LOG_LEVEL,  # Only affects root logger
     format=FORMAT,
     datefmt="[%X]",
-    handlers=[RichHandler()],
+    handlers=[RichHandler(show_path=False)],
 )
 
 def set_dependency_log_level(level: int):

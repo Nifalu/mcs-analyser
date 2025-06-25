@@ -3,33 +3,16 @@ import re
 import angr
 from math import factorial
 from angr import SimState, SimulationManager
+from analyzer.InputHooks import InputHookRegistry
 from analyzer.OutputChecker import setup_output_checker
 from analyzer.CANSim import Component, Message
 from analyzer.io_state import IOState
 from utils.logger import logger
 log = logger(__name__)
 
-class InputHook(angr.SimProcedure):
-    def __init__(self, input_generator):
-        super().__init__()
-        self.input_generator = input_generator
-
-    def run(self, ptr):
-        next_input: IOState = self.input_generator()
-        if next_input.constraints:
-            self.state.solver.add(*next_input.constraints)
-
-        self.state.memory.store(ptr, next_input.bv, endness=self.state.arch.memory_endness)
-
-        if 'inputs' not in self.state.globals:
-            self.state.globals['inputs'] = []
-        self.state.globals['inputs'].append((next_input.name, next_input.bv))
-
-        return 1
-
 class MCSAnalyser:
 
-    def __init__(self, component: Component, run_with_unconstrained_inputs: bool = False):
+    def __init__(self, component: Component, run_with_unconstrained_inputs: bool = False, count_inputs = False):
         self.component: Component = component
         self.run_with_unconstrained_inputs = run_with_unconstrained_inputs
         self.proj = angr.Project(self.component.path, auto_load_libs=False)
@@ -38,45 +21,56 @@ class MCSAnalyser:
         self.current_input_list = None
         self.output_addrs = None
         self.output_checker = None
+        self.input_hook_registry: InputHookRegistry = InputHookRegistry()
+        self.count_inputs = count_inputs
 
 
     def analyse(self) -> None:
+        log.info(f"Analysing {self.component}")
         input_addrs = self._find_addr(self.component.config().input_hooks)
+        log.info(f"Input Functions {[(name, hex(addr)) for addr, name in input_addrs.items()]}")
         entry_points = self._get_sim_states(input_addrs.keys())
         self.output_addrs = self._find_addr(self.component.config().output_hooks)
-        log.warning(f"Found Output Addresses: {[hex(addr) for addr in self.output_addrs.keys()]}")
+        log.info(f"Output Functions {[(name, hex(addr)) for addr, name in self.output_addrs.items()]}")
         self.output_checker = setup_output_checker(str(self.component.path), self.output_addrs)
 
-        for addr in input_addrs.keys():
-            self.proj.hook(addr, InputHook(self.yield_input)) if not self.proj.is_hooked(addr) else None
+        for addr, func_name in input_addrs.items():
+            if not self.proj.is_hooked(addr):
+                hook = self.input_hook_registry.create_hook(func_name, self.yield_input)
+                self.proj.hook(addr, hook)
+                log.debug(f"Hooked {func_name} at {hex(addr)} with {hook.__class__.__name__}")
 
         if self.run_with_unconstrained_inputs:
+            log.info(f"Running with unconstrained inputs on {len(entry_points)} entry points")
             self._run_analysis(entry_points)
-
-        input_combinations = self._generate_input_combinations(self.component.read_all())
-        for combination in input_combinations:
-            self.current_input_list = list(self._flatten_combinations(combination))
-            self._run_analysis(entry_points)
+        else:
+            input_combinations = self._generate_input_combinations(
+                self.component.read_all(),
+                length=self.component.expected_inputs)
+            for combination in input_combinations:
+                self.current_input_list = list(self._flatten_combinations(combination))
+                self._run_analysis(entry_points)
 
 
     def _run_analysis(self, entry_points: list[SimState]) -> None:
         for entry_point in entry_points:
+            entry_point_copy = entry_point.copy()
             if not self.run_with_unconstrained_inputs:
                 self.current_input_iterator = iter(self.current_input_list)
 
-            entry_point.inspect.b(
+            entry_point_copy.inspect.b(
                 'call',
-                when=angr.BP_AFTER,
+                when=angr.BP_BEFORE,
                 action=lambda state: self.output_checker.check_output(state, self.output_addrs.keys(), self.store_result_callback)
             )
-            simgr: SimulationManager = self.proj.factory.simgr(entry_point)
+            simgr: SimulationManager = self.proj.factory.simgr(entry_point_copy)
 
-            log.debug(f"Finding all solutions from {entry_point.addr:#x}")
+            log.debug(f"Finding all solutions from {entry_point_copy.addr:#x}")
 
             simgr.explore(
                 find=list(self.output_addrs.keys()),
                 cfg=self.cfg,
-                num_find=10_000,
+                num_find=10,
             )
 
             log.debug(f"Found {len(simgr.found)} solutions")
@@ -91,6 +85,8 @@ class MCSAnalyser:
         A Hook for the Hook to retrieve the next input.
         :return:
         """
+        if self.count_inputs:
+            self.component.expected_inputs += 1
         try:
             if self.run_with_unconstrained_inputs:
                 return IOState.unconstrained(f"input_{self.component.path}", self.component.config().default_var_length)
@@ -113,14 +109,13 @@ class MCSAnalyser:
 
         for func in self.cfg.kb.functions.values():
             if func.name and pattern.search(func.name):
-                #section = self.proj.loader.find_section_containing(func.addr)
-                log.debug(f"Found {func.name} at {hex(func.addr)}")
-                found[func.addr] = func.name
-                # if section and section.is_executable:
-                #     log.debug(f"Found {func.name} at {hex(func.addr)}")
-                #     found[func.addr] = func.name
-                # else:
-                #     log.debug(f"Ignoring {func.name} at {hex(func.addr)} as it is not executable. Probably a GOT entry")
+                section = self.proj.loader.find_section_containing(func.addr)
+                if section and section.is_executable:
+                    log.debug(f"Found {func.name} at {hex(func.addr)}")
+                    normalized_name = InputHookRegistry.normalize_function_name(func.name)
+                    found[func.addr] = normalized_name
+                else:
+                    log.debug(f"Ignoring {func.name} at {hex(func.addr)} as it is not executable. Probably a GOT entry")
         if not found:
             log.warning(f"No addresses found for {pattern}")
         return found
@@ -149,8 +144,8 @@ class MCSAnalyser:
             log.debug(f"Found {len(simgr.found)} SimStates for {[hex(x) for x in addrs]}")
             return simgr.found
 
-    @staticmethod
-    def _generate_input_combinations(inputs: list[Message], allow_repetition=False, length=None, warn_threshold=10000):
+
+    def _generate_input_combinations(self, inputs: list[Message], allow_repetition=False, length=None, warn_threshold=100):
         """
         Lazily generates all possible permutations of the inputs.
 
@@ -179,8 +174,10 @@ class MCSAnalyser:
         else:
             total_combinations = factorial(n) // factorial(n - k)
 
+        log.info(f"Generated {total_combinations} input combinations of length {length} to analyze")
+
         if total_combinations > warn_threshold:
-            print(f"Warning: This will generate {total_combinations:,} combinations!")
+            log.warning(f"Large number of input combinations to check: {total_combinations:,} combinations!")
 
         # Generate permutations
         if allow_repetition:
@@ -194,4 +191,5 @@ class MCSAnalyser:
     @staticmethod
     def _flatten_combinations(combination: tuple[Message, ...] | tuple[Message, Message]):
         for c in combination:
-            yield [c.dest, c.msg_data]
+            yield c.dest      # Yield destination IOState
+            yield c.msg_data  # Yield data IOState

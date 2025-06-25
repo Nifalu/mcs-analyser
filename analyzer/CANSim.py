@@ -2,6 +2,10 @@ from json import load
 from networkx import MultiDiGraph
 from pathlib import Path
 from dataclasses import dataclass
+
+from sympy.benchmarks.bench_discrete_log import \
+    data_set_1
+
 from analyzer.io_state import IOState
 from utils.logger import logger
 log = logger(__name__)
@@ -27,15 +31,57 @@ class Component:
         self.id = cid
         self.path = path
         self.bus = None
+        self.expected_inputs = 0
 
     def config(self) -> Config:
         return self.bus.config
 
     def send(self, msg: Message):
+
         if msg.dest.is_symbolic():
             log.critical(f"Message with symbolic destination!\n[{self.id}] -> [{msg.dest.constraints}]\nmsg:{msg}")
+            self.bus.graph.add_edge(msg.source, "symbolic destination", destination=msg.dest, msg_data=msg.msg_data)
+            return
+
+        # No way there is no getter for this??
+        source_node = None
+        for node in self.bus.graph.nodes():
+            if node == msg.source:
+                source_node = node
+                break
+
+        # Check if we already got an edge with the same information.
+        concrete_dest = msg.dest.bv.concrete_value
+        for (source, destination, data) in self.bus.graph.edges(source_node, data=True):
+            if destination == concrete_dest and source_node == msg.source:
+                edge_msg_data: IOState = data['msg_data']
+                if msg.msg_data.equals(edge_msg_data):
+                    log.info("Found identical edge in graph")
+                    return
+
+        if msg.msg_data.is_symbolic():
+            self.bus.graph.add_edge(
+                msg.source,
+                concrete_dest,
+                type='symbolic',
+                bv=str(msg.msg_data.bv),
+                constraints=msg.msg_data.constraints,
+                msg_data=msg.msg_data
+            )
+        else:
+            self.bus.graph.add_edge(
+                msg.source,
+                concrete_dest,
+                type='concrete',
+                bv=str(msg.msg_data.bv),
+                value=msg.msg_data.bv.concrete_value,
+                msg_data=msg.msg_data
+            )
+
+        log.warning(f"Added edge from {msg.source} to {concrete_dest}")
         self.bus.write(msg)
-        self.bus.graph.add_edge(msg.source, msg.dest, msg.msg_data)
+
+
 
     def read_all(self):
         return self.bus.read_all()
@@ -56,7 +102,7 @@ class CANBus:
 
     def register(self, component: Component):
         self.components.append(component)
-        self.graph.add_node(component.id)
+        self.graph.add_node(component.id, path=str(component.path), type='component', component=component)
         component.bus = self
 
     def write(self, msg: Message):

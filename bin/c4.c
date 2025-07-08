@@ -1,15 +1,15 @@
 #include <stdio.h>
 #include <stdint.h>
 
-/*----- Component 2 -----*/
+/*----- Component 4 -----*/
 
 int main() {
-    uint64_t recipient = 0;
+    uint64_t recipient = 5;
     uint64_t input;
 
-    scanf("%u", &input);
+    scanf("%u", &input);  // receive arbitrary input
 
-    if (input > 8) {
+    if (50 > input && input > 40) {
         printf("%u%u\n", recipient, input);
     }
 

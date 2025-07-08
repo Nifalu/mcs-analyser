@@ -37,8 +37,6 @@ class Coordinator:
         :return:
         """
 
-
-
         initial_graph = self.bus.graph.copy() # local reference for better readability
         graph = self.bus.graph
 
@@ -64,7 +62,6 @@ class Coordinator:
 
         analyzed = list(leaf_nodes)
         analyzed.append(0)
-        print(analyzed)
         while len(analyzed) < len(self.bus.components) + 1:
             for node in graph.nodes():
                 if node in analyzed:
@@ -73,10 +70,9 @@ class Coordinator:
                 if not predecessors.issubset(analyzed):
                     continue
 
-
-                print(f"Would analyze {node} with {len(self.bus.read_all())} possible inputs")
                 component = initial_graph.nodes[node]['component']
-                print(component)
+                print(f"Going to analyze {component} with {len(self.bus.read_all())} possible inputs")
+
                 MCSAnalyser(component).analyse()
                 analyzed.append(node)
 
@@ -98,11 +94,6 @@ class Coordinator:
             edge_labels=edge_labels,
             type_color_map=type_color_map
         )
-
-
-
-
-
 
 
 

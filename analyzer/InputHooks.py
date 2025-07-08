@@ -25,7 +25,7 @@ class InputHookBase(angr.SimProcedure):
     def get_next_input(self) -> IOState:
         """Common method to get next input and handle constraints"""
         next_input = self.input_generator()
-
+        log.info(f"Getting next input: {next_input.name}: {next_input.constraints} - symbolic: {next_input.is_symbolic()}")
         if next_input.constraints:
             self.state.solver.add(*next_input.constraints)
         return next_input

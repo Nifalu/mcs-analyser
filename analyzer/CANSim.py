@@ -24,7 +24,7 @@ class Message:
         self.msg_data: IOState = msg_data
 
     def __repr__(self):
-        return f"Message(\n  dest={self.dest},\n  msg_data={self.msg_data})"
+        return f"Message(\n  dest={self.dest.name} - {self.dest.constraints},\n  msg_data={self.msg_data.name} - {self.msg_data.constraints})"
 
 class Component:
     def __init__(self, cid, path: Path):
@@ -37,7 +37,7 @@ class Component:
         return self.bus.config
 
     def send(self, msg: Message):
-
+        log.warning(f"got message {msg}")
         if msg.dest.is_symbolic():
             log.critical(f"Message with symbolic destination!\n[{self.id}] -> [{msg.dest.constraints}]\nmsg:{msg}")
             self.bus.graph.add_edge(msg.source, "symbolic destination", destination=msg.dest, msg_data=msg.msg_data)

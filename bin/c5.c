@@ -10,13 +10,14 @@ int main() {
 
 
     scanf("%u", &dest);
-    if (dest == 5)
+    if (dest == 5) {
 
         scanf("%u", &input);
 
         if (input == 14) {
             printf("%u%u\n", recipient, input);
         }
+    }
 
     return 0;
 }

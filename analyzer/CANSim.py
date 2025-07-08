@@ -37,7 +37,6 @@ class Component:
         return self.bus.config
 
     def send(self, msg: Message):
-        log.warning(f"got message {msg}")
         if msg.dest.is_symbolic():
             log.critical(f"Message with symbolic destination!\n[{self.id}] -> [{msg.dest.constraints}]\nmsg:{msg}")
             self.bus.graph.add_edge(msg.source, "symbolic destination", destination=msg.dest, msg_data=msg.msg_data)
@@ -56,7 +55,7 @@ class Component:
             if destination == concrete_dest and source_node == msg.source:
                 edge_msg_data: IOState = data['msg_data']
                 if msg.msg_data.equals(edge_msg_data):
-                    log.info("Found identical edge in graph")
+                    log.warning("Found identical edge in graph")
                     return
 
         if msg.msg_data.is_symbolic():
@@ -78,7 +77,7 @@ class Component:
                 msg_data=msg.msg_data
             )
 
-        log.warning(f"Added edge from {msg.source} to {concrete_dest}")
+        log.info(f"Added edge from {msg.source} to {concrete_dest} with constraints {msg.msg_data.constraints}")
         self.bus.write(msg)
 
 

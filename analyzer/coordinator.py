@@ -37,6 +37,19 @@ class Coordinator:
         :return:
         """
 
+        vc = VisualizationClient()
+        type_color_map = {
+            # Nodes
+            "input": "#9FE2BF",
+            "output": "#CCCCFF",
+            "component": "#6495ED",
+            # Edges
+            "symbolic": "#FFBF00",
+            "concrete": "#DE3163"
+        }
+        node_labels = ['type', 'path']
+        edge_labels = ['type', 'source', 'target', 'bv', 'value', 'constraints']
+
         initial_graph = self.bus.graph.copy() # local reference for better readability
         graph = self.bus.graph
 
@@ -52,12 +65,19 @@ class Coordinator:
 
         # reset the graph
         self.bus.graph = MultiDiGraph()
+        self.bus.graph.add_node(0)
         graph = self.bus.graph
 
         # analyze the leaf components first
         for node in leaf_nodes:
             component = initial_graph.nodes[node]['component']
             MCSAnalyser(component, run_with_unconstrained_inputs=True).analyse()
+            vc.send_graph(
+                self.bus.graph,
+                node_labels=node_labels,
+                edge_labels=edge_labels,
+                type_color_map=type_color_map
+            )
 
 
         analyzed = list(leaf_nodes)
@@ -74,26 +94,14 @@ class Coordinator:
                 print(f"Going to analyze {component} with {len(self.bus.read_all())} possible inputs")
 
                 MCSAnalyser(component).analyse()
+                vc.send_graph(
+                    self.bus.graph,
+                    node_labels=node_labels,
+                    edge_labels=edge_labels,
+                    type_color_map=type_color_map
+                )
                 analyzed.append(node)
 
-        vc = VisualizationClient()
-        type_color_map = {
-            # Nodes
-            "input": "#9FE2BF",
-            "output": "#CCCCFF",
-            "component": "#6495ED",
-            # Edges
-            "symbolic": "#FFBF00",
-            "concrete": "#DE3163"
-        }
-        node_labels = ['type', 'path']
-        edge_labels = ['type', 'source', 'target', 'bv', 'value', 'constraints']
-        vc.send_graph(
-            self.bus.graph,
-            node_labels=node_labels,
-            edge_labels=edge_labels,
-            type_color_map=type_color_map
-        )
 
 
 

@@ -10,6 +10,8 @@ from analyzer.io_state import IOState
 from utils.logger import logger
 log = logger(__name__)
 
+NUM_FIND = 100
+
 class MCSAnalyser:
 
     def __init__(self, component: Component, run_with_unconstrained_inputs: bool = False, count_inputs = False):
@@ -25,8 +27,9 @@ class MCSAnalyser:
         self.count_inputs = count_inputs
 
 
+
     def analyse(self) -> None:
-        log.info(f"Analysing {self.component}")
+        log.info(f"\n=========== Analysing {self.component} ============")
         input_addrs = self._find_addr(self.component.config().input_hooks)
         log.info(f"Input Functions {[(name, hex(addr)) for addr, name in input_addrs.items()]}")
         entry_points = self._get_sim_states(input_addrs.keys())
@@ -47,9 +50,11 @@ class MCSAnalyser:
             input_combinations = self._generate_input_combinations(
                 self.component.read_all(),
                 length=self.component.expected_inputs)
-            for combination in input_combinations:
+            for i, combination in enumerate(input_combinations):
+                log.info(f"Analyzing input combination {i} for {self.component}")
                 self.current_input_list = list(self._flatten_combinations(combination))
                 self._run_analysis(entry_points)
+        log.info(f"=========================================================\n")
 
 
     def _run_analysis(self, entry_points: list[SimState]) -> None:
@@ -70,12 +75,10 @@ class MCSAnalyser:
             simgr.explore(
                 find=list(self.output_addrs.keys()),
                 cfg=self.cfg,
-                num_find=10,
+                num_find=NUM_FIND,
             )
 
             log.debug(f"Found {len(simgr.found)} solutions")
-
-            #self._get_sim_states(self.output_addrs.values(), ep_copy)
 
     def store_result_callback(self, dest: IOState, msg_data: IOState) -> None:
         self.component.send(Message(self.component.id, dest, msg_data))
@@ -126,7 +129,6 @@ class MCSAnalyser:
         :param addrs:
         :return:
         """
-        NUM_FIND = 10_000
 
         initial_state: SimState = self.proj.factory.entry_state() if entry_point is None else entry_point
         simgr: SimulationManager = self.proj.factory.simgr(initial_state)
@@ -161,8 +163,12 @@ class MCSAnalyser:
         Raises:
             ValueError: If length > len(inputs) and allow_repetition=False
         """
+        log.debug("Generating permutations with:")
+        for msg in inputs:
+            log.debug(f"  {msg}")
+
         n = len(inputs)
-        k = length if length is not None else n
+        k = length//2 if length is not None else n
 
         # Validate
         if not allow_repetition and k > n:
@@ -192,4 +198,6 @@ class MCSAnalyser:
     def _flatten_combinations(combination: tuple[Message, ...] | tuple[Message, Message]):
         for c in combination:
             yield c.dest      # Yield destination IOState
+            log.debug(f"Yielded destination {c.dest}")
             yield c.msg_data  # Yield data IOState
+            log.debug(f"Yielded data {c.msg_data}")

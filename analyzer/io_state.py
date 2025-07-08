@@ -104,50 +104,101 @@ class IOState:
     def equals(self, other: "IOState") -> bool:
         """
         Check if two IOState objects have constraints that define the same solution space.
-        
-        Returns True if (C1 ∧ ¬C2) is unsat AND (C2 ∧ ¬C1) is unsat.
+
+        Returns True if the IOStates represent equivalent solution spaces, even if they
+        use different bitvector variables.
         """
+        log.warning(f"Comparing {self.name} and {other.name}")
+
         # Early checks
         if not self.constraints and not other.constraints:
             return True  # Both unconstrained
-        
+
         if bool(self.constraints) != bool(other.constraints):
             return False  # One constrained, one not
-        
+
         # Check if both are concrete and compare values
         if self.is_concrete() and other.is_concrete():
             return self.bv.concrete_value == other.bv.concrete_value
-        
+
         if self.is_concrete() != other.is_concrete():
             return False  # One concrete, one symbolic
-        
-        # Main check: (C1 ∧ ¬C2) is unsat AND (C2 ∧ ¬C1) is unsat
-        
-        # Check (C1 ∧ ¬C2)
+
+        # Check if bitvectors have the same length
+        if self.bv.length != other.bv.length:
+            return False
+
+        # For symbolic cases, we need to check if the constraints define the same space
+        # even if they use different variable names
+
+        # Special case: if both have single-variable constraints only on their respective bvs
+        self_vars = set()
+        for c in self.constraints:
+            self_vars.update(c.variables)
+
+        other_vars = set()
+        for c in other.constraints:
+            other_vars.update(c.variables)
+
+        # If constraints only reference their respective bitvector variables
+        if self_vars == {self.bv} and other_vars == {other.bv}:
+            # Create a substitution mapping
+            substitution = {self.bv: other.bv}
+
+            # Substitute variables in self.constraints
+            substituted_constraints = []
+            for c in self.constraints:
+                substituted = c.replace(substitution)
+                substituted_constraints.append(substituted)
+
+            # Check if substituted constraints are equivalent to other.constraints
+            # by checking mutual implication
+            solver1 = claripy.Solver()
+            solver1.add(substituted_constraints)
+            if other.constraints:
+                c2_conjunction = claripy.And(*other.constraints) if len(other.constraints) > 1 else other.constraints[0]
+                solver1.add(claripy.Not(c2_conjunction))
+
+            if solver1.satisfiable():
+                return False
+
+            solver2 = claripy.Solver()
+            solver2.add(other.constraints)
+            if substituted_constraints:
+                c1_conjunction = claripy.And(*substituted_constraints) if len(substituted_constraints) > 1 else substituted_constraints[0]
+                solver2.add(claripy.Not(c1_conjunction))
+
+            if solver2.satisfiable():
+                return False
+
+            return True
+
+        # General case: check if constraint sets are equivalent
+        # This works for the original case but not for renamed variables
         solver1 = claripy.Solver()
         for c in self.constraints:
             solver1.add(c)
-        
+
         if other.constraints:
             c2_conjunction = claripy.And(*other.constraints) if len(other.constraints) > 1 else other.constraints[0]
             solver1.add(claripy.Not(c2_conjunction))
-        
+
         if solver1.satisfiable():
-            return False  # Found a solution in C1 but not in C2
-        
-        # Check (C2 ∧ ¬C1)
+            return False
+
         solver2 = claripy.Solver()
         for c in other.constraints:
             solver2.add(c)
-        
+
         if self.constraints:
             c1_conjunction = claripy.And(*self.constraints) if len(self.constraints) > 1 else self.constraints[0]
             solver2.add(claripy.Not(c1_conjunction))
-        
+
         if solver2.satisfiable():
-            return False  # Found a solution in C2 but not in C1
-        
-        return True  # Both checks passed, constraints are equivalent
+            return False
+
+        return True
+
 
     def pretty(self, max_len: int = 96) -> str:
         if self.is_concrete():

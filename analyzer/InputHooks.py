@@ -1,5 +1,11 @@
 import angr
 from abc import abstractmethod
+
+import \
+    claripy
+
+from analyzer.config import \
+    Config
 from analyzer.io_state import IOState
 from utils.logger import logger
 log = logger(__name__)
@@ -22,19 +28,16 @@ class InputHookBase(angr.SimProcedure):
         """Returns a list of function names this hook can handle"""
         pass
 
-    def get_next_input(self) -> IOState:
+    def get_next_input(self) -> claripy.ast.BV:
         """Common method to get next input and handle constraints"""
         next_input = self.input_generator()
-        log.info(f"Getting next input: {next_input.name}: {next_input.constraints} - symbolic: {next_input.is_symbolic()}")
-        if next_input.constraints:
-            self.state.solver.add(*next_input.constraints)
-        return next_input
-
-    def store_input_record(self, name: str, bv):
-        """Common method to record inputs"""
-        if 'inputs' not in self.state.globals:
-            self.state.globals['inputs'] = []
-        self.state.globals['inputs'].append((name, bv))
+        if isinstance(next_input, IOState):
+            if next_input.constraints:
+                self.state.solver.add(*next_input.constraints)
+            return next_input.bv
+        elif isinstance(next_input, int):
+            return claripy.BVV(next_input, Config.default_var_length)
+        raise TypeError(f"Unsupported type {type(next_input)}, expected claripy.BV or int")
 
 
 class ScanfHook(InputHookBase):
@@ -48,8 +51,7 @@ class ScanfHook(InputHookBase):
         next_input = self.get_next_input()
 
         # Store at the pointer location
-        self.state.memory.store(ptr, next_input.bv, endness=self.state.arch.memory_endness)
-        self.store_input_record(next_input.name, next_input.bv)
+        self.state.memory.store(ptr, next_input, endness=self.state.arch.memory_endness)
 
         return 1  # scanf returns number of items read
 

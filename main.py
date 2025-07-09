@@ -38,7 +38,6 @@ def get_component_paths() -> list[Path]:
 
 def main():
     co = Coordinator()
-    #co.run_simple()
     co.run()
 
 

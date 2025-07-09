@@ -3,9 +3,14 @@ import re
 import angr
 from math import factorial
 from angr import SimState, SimulationManager
+
+from analyzer.config import Config
 from analyzer.InputHooks import InputHookRegistry
 from analyzer.OutputChecker import setup_output_checker
-from analyzer.CANSim import Component, Message
+from analyzer.CANSim import \
+    Component, \
+    Message, \
+    CANBus
 from analyzer.io_state import IOState
 from utils.logger import logger
 log = logger(__name__)
@@ -24,19 +29,19 @@ class MCSAnalyser:
         self.output_addrs = None
         self.output_checker = None
         self.input_hook_registry: InputHookRegistry = InputHookRegistry()
-        self.count_inputs = count_inputs
+        self.count_inputs: bool = count_inputs
         self.current_input_counter = 0
 
 
 
     def analyse(self) -> None:
         log.info(f"\n=========== Analysing {self.component} ============")
-        input_addrs = self._find_addr(self.component.config().input_hooks)
+        input_addrs = self._find_addr(Config.input_hooks)
         log.info(f"Input Functions {[(name, hex(addr)) for addr, name in input_addrs.items()]}")
         entry_points = self._get_sim_states(input_addrs.keys())
-        self.output_addrs = self._find_addr(self.component.config().output_hooks)
+        self.output_addrs = self._find_addr(Config.output_hooks)
         log.info(f"Output Functions {[(name, hex(addr)) for addr, name in self.output_addrs.items()]}")
-        self.output_checker = setup_output_checker(str(self.component.path), self.output_addrs)
+        self.output_checker = setup_output_checker(self.component, self.output_addrs)
 
         for addr, func_name in input_addrs.items():
             if not self.proj.is_hooked(addr):
@@ -49,7 +54,6 @@ class MCSAnalyser:
             self._run_analysis(entry_points)
         else:
             input_combinations = self._generate_input_combinations(
-                self.component.read_all(),
                 length=self.component.expected_inputs)
             for i, combination in enumerate(input_combinations):
                 log.info(f"Analyzing input combination {i} for {self.component}")
@@ -68,7 +72,7 @@ class MCSAnalyser:
             entry_point_copy.inspect.b(
                 'call',
                 when=angr.BP_BEFORE,
-                action=lambda state: self.output_checker.check_output(state, self.output_addrs.keys(), self.store_result_callback)
+                action=lambda state: self.output_checker.check_output(state, self.output_addrs.keys())
             )
             simgr: SimulationManager = self.proj.factory.simgr(entry_point_copy)
 
@@ -82,10 +86,7 @@ class MCSAnalyser:
 
             log.debug(f"Found {len(simgr.found)} solutions")
 
-    def store_result_callback(self, dest: IOState, msg_data: IOState) -> None:
-        self.component.send(Message(self.component.id, dest, msg_data))
-
-    def yield_input(self):
+    def yield_input(self) -> IOState | int:
         """
         A Hook for the Hook to retrieve the next input.
         :return:
@@ -95,11 +96,11 @@ class MCSAnalyser:
         try:
             if self.run_with_unconstrained_inputs:
                 self.current_input_counter += 1
-                return IOState.unconstrained(f"{self.component.path}_input_{self.current_input_counter}", self.component.config().default_var_length)
+                return IOState.unconstrained(f"{self.component.name}_input_{self.current_input_counter}")
             return next(self.current_input_iterator)
         except StopIteration:
             log.error("Requested more inputs than available... => Creating unconstrained input")
-            return IOState.unconstrained(f"{self.component.path}_unconstrained", self.component.config().default_var_length)
+            return IOState.unconstrained(f"{self.component.name}_unconstrained")
 
     def _find_addr(self, names: list[str]):
         """
@@ -154,13 +155,12 @@ class MCSAnalyser:
             log.debug(f"Found {len(simgr.found)} SimStates for {[hex(x) for x in addrs]}")
             return simgr.found
 
-
-    def _generate_input_combinations(self, inputs: list[Message], allow_repetition=False, length=None, warn_threshold=100):
+    @staticmethod
+    def _generate_input_combinations(allow_repetition=False, length=None, warn_threshold=100):
         """
         Lazily generates all possible permutations of the inputs.
 
         Args:
-            inputs: List of available inputs
             allow_repetition: Whether to allow selecting the same input multiple times (default: False)
             length: Length of permutations to generate (default: len(inputs))
             warn_threshold: Number of combinations above which to print a warning
@@ -172,6 +172,7 @@ class MCSAnalyser:
             ValueError: If length > len(inputs) and allow_repetition=False
         """
         log.debug("Generating permutations with:")
+        inputs = CANBus.read_all()
         for msg in inputs:
             log.debug(f"  {msg}")
 

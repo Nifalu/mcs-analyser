@@ -1,8 +1,11 @@
 from abc import ABC, abstractmethod
 import angr
 import re
-from typing import List, Optional
+from typing import Optional
 import logging
+
+import \
+    claripy
 
 log = logging.getLogger(__name__)
 
@@ -16,7 +19,7 @@ class OutputFunctionParser(ABC):
         pass
 
     @abstractmethod
-    def parse_arguments(self, state: angr.SimState) -> List[any]:
+    def parse_arguments(self, state: angr.SimState) -> list[claripy.ast.BV]:
         """Extract arguments from the function call"""
         pass
 
@@ -33,7 +36,7 @@ class PrintfParser(OutputFunctionParser):
     def can_handle(self, func_name: str, func_addr: int) -> bool:
         return func_name in self.printf_functions
 
-    def parse_arguments(self, state: angr.SimState) -> List[any]:
+    def parse_arguments(self, state: angr.SimState) -> list[claripy.ast.BV]:
         format_str_ptr = self._get_format_string_ptr(state)
         try:
             format_str = state.solver.eval(state.memory.load(format_str_ptr, 1024), cast_to=bytes)

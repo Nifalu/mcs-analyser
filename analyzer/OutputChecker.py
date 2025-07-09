@@ -1,18 +1,23 @@
 # refactored_checker.py
 import angr
 import logging
+
+from analyzer.CANSim import \
+    Component, \
+    CANBus, \
+    Message
 from analyzer.OutputParser import OutputParserRegistry, OutputFunctionParser
 
-from analyzer.io_state import IOState
-
+from analyzer.io_state import \
+    IOState
 log = logging.getLogger(__name__)
 
 
 class OutputChecker:
     """Main class for checking output function calls"""
 
-    def __init__(self, binary: str):
-        self.binary = binary
+    def __init__(self, component: Component):
+        self.component = component
         self.parser_registry = OutputParserRegistry()
 
     def register_output_function(self, addr: int, name: str):
@@ -23,7 +28,7 @@ class OutputChecker:
         """Register a custom parser"""
         self.parser_registry.register_parser(parser)
 
-    def check_output(self, state: angr.SimState, output_func_addrs: list[int], callback) -> None:
+    def check_output(self, state: angr.SimState, output_func_addrs: list[int]) -> None:
         """
         Check if the current call is to an output function, and if so, extract symbolic arguments.
         Save symbolic outputs into state.globals['output_constraints'].
@@ -52,25 +57,24 @@ class OutputChecker:
             log.error(f"Irregular output format {args} for state {hex(state.addr)}")
             return
 
-        dest: IOState = IOState.from_state(
-            f"{self.binary}_out_{hex(concrete_call_target)}_dest",
-            args[0],
-            state.copy()
-        )
+        if args[0].concrete:
+            dest_cid = args[0].concrete_value
+        else:
+            log.critical(f"Message with symbolic destination from {self.component}:\n{args[0]}")
+            return
 
-        msg_data: IOState = IOState.from_state(
-            f"{self.binary}_out_{hex(concrete_call_target)}_msg",
+        data: IOState = IOState.from_state(
             args[1],
             state.copy()
         )
-        msg_data.set_label('symbolic' if msg_data.is_symbolic() else 'concrete')
 
-        callback(dest, msg_data)
+        data.set_label('symbolic' if data.is_symbolic() else 'concrete')
+        CANBus.write(Message(self.component.cid, dest_cid, data))
 
 
-def setup_output_checker(binary_path: str, output_addrs) -> OutputChecker:
+def setup_output_checker(component: Component, output_addrs) -> OutputChecker:
     """Set up the output checker with known functions"""
-    checker = OutputChecker(binary_path)
+    checker = OutputChecker(component)
 
     for addr, name in output_addrs.items():
         try:

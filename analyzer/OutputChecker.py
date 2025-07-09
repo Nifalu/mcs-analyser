@@ -63,6 +63,7 @@ class OutputChecker:
             args[1],
             state.copy()
         )
+        msg_data.set_label('symbolic' if msg_data.is_symbolic() else 'concrete')
 
         callback(dest, msg_data)
 

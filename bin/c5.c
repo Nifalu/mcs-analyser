@@ -14,7 +14,7 @@ int main() {
 
         scanf("%u", &input);
 
-        if (input == 14) {
+        if (input > 14) {
             printf("%u%u\n", recipient, input);
         }
     }

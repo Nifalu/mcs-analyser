@@ -2,10 +2,6 @@ from json import load
 from networkx import MultiDiGraph
 from pathlib import Path
 from dataclasses import dataclass
-
-from sympy.benchmarks.bench_discrete_log import \
-    data_set_1
-
 from analyzer.io_state import IOState
 from utils.logger import logger
 log = logger(__name__)
@@ -62,7 +58,7 @@ class Component:
             self.bus.graph.add_edge(
                 msg.source,
                 concrete_dest,
-                type='symbolic',
+                type=msg.msg_data.label,
                 bv=str(msg.msg_data.bv),
                 constraints=msg.msg_data.constraints,
                 msg_data=msg.msg_data
@@ -71,7 +67,7 @@ class Component:
             self.bus.graph.add_edge(
                 msg.source,
                 concrete_dest,
-                type='concrete',
+                type=msg.msg_data.label,
                 bv=str(msg.msg_data.bv),
                 value=msg.msg_data.bv.concrete_value,
                 msg_data=msg.msg_data

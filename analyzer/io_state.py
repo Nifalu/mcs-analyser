@@ -41,8 +41,10 @@ class IOState:
                  name: str,
                  bv: cl_ast.BV,
                  constraints: Iterable[cl_ast.Bool],
+                 label=None
                  ):
         self.name = name
+        self.label = label
         self.bv: cl_ast.BV = bv
         self.constraints: list[cl_ast.Bool] = list(constraints)
 
@@ -51,11 +53,12 @@ class IOState:
         cls,
         name: str,
         length: int,
+        explicit_name=True
     ) -> 'IOState':
         """
         Create an unconstrained IOState with the given name and bit-width.
         """
-        bv = cl_ast.bv.BVS(name, length)
+        bv = cl_ast.bv.BVS(name, length, explicit_name=explicit_name)
         return cls(name, bv, [])
 
     @classmethod
@@ -80,6 +83,8 @@ class IOState:
         else:
             return cls(name, bv, [])
 
+    def set_label(self, label: str) -> None:
+        self.label = label
 
     def is_symbolic(self) -> bool:
         """Return True if the encapsulated value is symbolic."""
@@ -109,6 +114,7 @@ class IOState:
         use different bitvector variables.
         """
         log.warning(f"Comparing {self.name} and {other.name}")
+        log.warning(f"with constraints:\n {self.constraints}\n {other.constraints}")
 
         # Early checks
         if not self.constraints and not other.constraints:

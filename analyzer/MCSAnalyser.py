@@ -25,6 +25,7 @@ class MCSAnalyser:
         self.output_checker = None
         self.input_hook_registry: InputHookRegistry = InputHookRegistry()
         self.count_inputs = count_inputs
+        self.current_input_counter = 0
 
 
 
@@ -58,6 +59,7 @@ class MCSAnalyser:
 
 
     def _run_analysis(self, entry_points: list[SimState]) -> None:
+        self._reset_claripy_symvar_counter()
         for entry_point in entry_points:
             entry_point_copy = entry_point.copy()
             if not self.run_with_unconstrained_inputs:
@@ -92,7 +94,8 @@ class MCSAnalyser:
             self.component.expected_inputs += 1
         try:
             if self.run_with_unconstrained_inputs:
-                return IOState.unconstrained(f"input_{self.component.path}", self.component.config().default_var_length)
+                self.current_input_counter += 1
+                return IOState.unconstrained(f"{self.component.path}_input_{self.current_input_counter}", self.component.config().default_var_length)
             return next(self.current_input_iterator)
         except StopIteration:
             log.error("Requested more inputs than available... => Creating unconstrained input")
@@ -122,6 +125,11 @@ class MCSAnalyser:
         if not found:
             log.warning(f"No addresses found for {pattern}")
         return found
+
+    @staticmethod
+    def _reset_claripy_symvar_counter():
+        import claripy.ast.bv as bv_module
+        bv_module.var_counter = itertools.count()
 
     def _get_sim_states(self, addrs, entry_point: SimState=None) -> list[SimState]:
         """

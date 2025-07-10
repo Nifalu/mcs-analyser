@@ -5,42 +5,34 @@
   "components_dir": "./bin",
   "components": [
     {
-      "name": "c1",
+      "name": "Aircraft",
+      "filename": "",
+      "id": 0
+    },
+    {
+      "name": "Airspeed Sensor",
       "filename": "c1_x86",
-      "id": 1,
-      "is_leaf": true,
-      "input_order": {}
+      "id": 1
     },
     {
-      "name": "c2",
+      "name": "GPS",
       "filename": "c2_x86",
-      "id": 2,
-      "is_leaf": false,
-      "input_order": {}
+      "id": 2
     },
     {
-      "name": "c3",
+      "name": "Flight Controller",
       "filename": "c3_x86",
-      "id": 3,
-      "is_leaf": false,
-      "input_order": {
-        "1":"1",
-        "2":"2"
-      }
+      "id": 3
     },
     {
-      "name": "c4",
+      "name": "Cockpit Controls",
       "filename": "c4_x86",
-      "id": 4,
-      "is_leaf": false,
-      "input_order": {}
+      "id": 4
     },
     {
-      "name": "c5",
+      "name": "Autopilot",
       "filename": "c5_x86",
-      "id": 5,
-      "is_leaf": false,
-      "input_order": {}
+      "id": 5
     }
   ]
 }

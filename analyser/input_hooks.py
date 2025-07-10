@@ -4,9 +4,9 @@ from abc import abstractmethod
 import \
     claripy
 
-from analyzer.config import \
+from analyser.config import \
     Config
-from analyzer.io_state import IOState
+from analyser.io_state import IOState
 from utils.logger import logger
 log = logger(__name__)
 

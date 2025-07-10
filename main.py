@@ -1,9 +1,9 @@
 from utils.logger import logger, set_project_log_level, set_dependency_log_level
 from logging import DEBUG, INFO, WARNING, ERROR, CRITICAL
-set_project_log_level(DEBUG)
+set_project_log_level(INFO)
 set_dependency_log_level(ERROR)
 log = logger(__name__)
-from analyzer.coordinator import Coordinator
+from analyser.coordinator import Coordinator
 
 from pathlib import Path
 import os

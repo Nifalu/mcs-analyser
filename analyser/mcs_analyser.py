@@ -4,14 +4,11 @@ import angr
 from math import factorial
 from angr import SimState, SimulationManager
 
-from analyzer.config import Config
-from analyzer.InputHooks import InputHookRegistry
-from analyzer.OutputChecker import setup_output_checker
-from analyzer.CANSim import \
-    Component, \
-    Message, \
-    CANBus
-from analyzer.io_state import IOState
+from analyser.config import Config
+from analyser.InputHooks import InputHookRegistry
+from analyser.OutputChecker import setup_output_checker
+from analyser.can_simulator import Component, Message, CANBus
+from analyser.io_state import IOState
 from utils.logger import logger
 log = logger(__name__)
 
@@ -20,6 +17,8 @@ NUM_FIND = 100
 class MCSAnalyser:
 
     def __init__(self, component: Component, run_with_unconstrained_inputs: bool = False, count_inputs = False):
+        if component.cid == 0:
+            return
         self.component: Component = component
         self.run_with_unconstrained_inputs = run_with_unconstrained_inputs
         self.proj = angr.Project(self.component.path, auto_load_libs=False)
@@ -31,10 +30,11 @@ class MCSAnalyser:
         self.input_hook_registry: InputHookRegistry = InputHookRegistry()
         self.count_inputs: bool = count_inputs
         self.current_input_counter = 0
+        self._analyse()
 
 
 
-    def analyse(self) -> None:
+    def _analyse(self) -> None:
         log.info(f"\n=========== Analysing {self.component} ============")
         input_addrs = self._find_addr(Config.input_hooks)
         log.info(f"Input Functions {[(name, hex(addr)) for addr, name in input_addrs.items()]}")
@@ -59,7 +59,6 @@ class MCSAnalyser:
                 log.info(f"Analyzing input combination {i} for {self.component}")
                 self.current_input_list = list(self._flatten_combinations(combination))
                 self._run_analysis(entry_points)
-        log.info(f"=========================================================\n")
 
 
     def _run_analysis(self, entry_points: list[SimState]) -> None:

@@ -11,7 +11,7 @@ from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
 
-from analyzer.config import \
+from analyser.config import \
     Config
 from utils.logger import logger
 log = logger(__name__)
@@ -94,8 +94,8 @@ class IOState:
         Returns True if the IOStates represent equivalent solution spaces, even if they
         use different bitvector variables.
         """
-        log.warning(f"Comparing {self.bv} and {other.bv}")
-        log.warning(f"with constraints:\n {self.constraints}\n {other.constraints}")
+        log.debug(f"Comparing {self.bv} and {other.bv}")
+        log.debug(f"with constraints:\n {self.constraints}\n {other.constraints}")
 
         # Early checks
         if not self.constraints and not other.constraints:

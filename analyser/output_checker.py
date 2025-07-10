@@ -1,15 +1,9 @@
-# refactored_checker.py
 import angr
 import logging
 
-from analyzer.CANSim import \
-    Component, \
-    CANBus, \
-    Message
-from analyzer.OutputParser import OutputParserRegistry, OutputFunctionParser
-
-from analyzer.io_state import \
-    IOState
+from analyser.can_simulator import Component, Message, CANBus
+from analyser.OutputParser import OutputParserRegistry, OutputFunctionParser
+from analyser.io_state import IOState
 log = logging.getLogger(__name__)
 
 

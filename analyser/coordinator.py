@@ -1,7 +1,7 @@
 import networkx as nx
 from schnauzer import VisualizationClient
-from analyser.can_simulator import CANBus, Component, Message
-from analyser.MCSAnalyser import MCSAnalyser
+from analyser.can_simulator import CANBus
+from analyser.mcs_analyser import MCSAnalyser
 from pathlib import Path
 from utils.logger import logger
 log = logger(__name__)

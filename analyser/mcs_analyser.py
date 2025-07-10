@@ -5,8 +5,8 @@ from math import factorial
 from angr import SimState, SimulationManager
 
 from analyser.config import Config
-from analyser.InputHooks import InputHookRegistry
-from analyser.OutputChecker import setup_output_checker
+from analyser.input_hooks import InputHookRegistry
+from analyser.output_checker import setup_output_checker
 from analyser.can_simulator import Component, Message, CANBus
 from analyser.io_state import IOState
 from utils.logger import logger

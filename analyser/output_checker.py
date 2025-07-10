@@ -2,7 +2,7 @@ import angr
 import logging
 
 from analyser.can_simulator import Component, Message, CANBus
-from analyser.OutputParser import OutputParserRegistry, OutputFunctionParser
+from analyser.output_parser import OutputParserRegistry, OutputFunctionParser
 from analyser.io_state import IOState
 log = logging.getLogger(__name__)
 

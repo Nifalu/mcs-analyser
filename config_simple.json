@@ -1,0 +1,38 @@
+{
+  "var_length": 64,
+  "input_hooks": ["scanf", "gets", "read"],
+  "output_hooks": ["printf", "puts", "write"],
+  "components_dir": "./bin",
+  "components": [
+    {
+      "name": "Aircraft",
+      "filename": "",
+      "id": 0
+    },
+    {
+      "name": "Airspeed Sensor",
+      "filename": "c1_x86",
+      "id": 1
+    },
+    {
+      "name": "GPS",
+      "filename": "c2_x86",
+      "id": 2
+    },
+    {
+      "name": "Position Module",
+      "filename": "c3_x86",
+      "id": 3
+    },
+    {
+      "name": "Cockpit Controls",
+      "filename": "c4_x86",
+      "id": 4
+    },
+    {
+      "name": "Flight Controller",
+      "filename": "c5_x86",
+      "id": 5
+    }
+  ]
+}

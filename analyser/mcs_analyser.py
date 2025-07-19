@@ -17,7 +17,8 @@ NUM_FIND = 100
 class MCSAnalyser:
 
     def __init__(self, component: Component, run_with_unconstrained_inputs: bool = False, count_inputs = False):
-        if component.cid == 0:
+        if not component.path or not component.path.is_file():
+            log.info(f"Treating {component} as virtual component as no valid file found at path")
             return
         self.component: Component = component
         self.run_with_unconstrained_inputs = run_with_unconstrained_inputs

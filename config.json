@@ -2,37 +2,77 @@
   "var_length": 64,
   "input_hooks": ["scanf", "gets", "read"],
   "output_hooks": ["printf", "puts", "write"],
-  "components_dir": "./bin",
+  "components_dir": "./bin/showcase",
   "components": [
     {
-      "name": "Aircraft",
-      "filename": "",
-      "id": 0
-    },
-    {
-      "name": "Airspeed Sensor",
-      "filename": "c1_x86",
+      "name": "GPS",
+      "filename": "1_gps_sensor",
       "id": 1
     },
     {
-      "name": "GPS",
-      "filename": "c2_x86",
+      "name": "Altimeter",
+      "filename": "2_altimeter",
       "id": 2
     },
     {
-      "name": "Flight Controller",
-      "filename": "c3_x86",
+      "name": "Gyroscope",
+      "filename": "3_gyroscope",
       "id": 3
     },
     {
-      "name": "Cockpit Controls",
-      "filename": "c4_x86",
+      "name": "Landing Gear Status",
+      "filename": "4_landing_gear_status",
       "id": 4
     },
     {
-      "name": "Autopilot",
-      "filename": "c5_x86",
+      "name": "Traffic Collision Avoidance System",
+      "filename": "5_tcas",
       "id": 5
+    },
+    {
+      "name": "Pilot Input",
+      "filename": "6_pilot_input",
+      "id": 6
+    },
+    {
+      "name": "ADIRU",
+      "filename": "10_adiru",
+      "id": 10
+    },
+    {
+      "name": "Ground Proximity Warning System",
+      "filename": "11_ground_proximity_warning_system",
+      "id": 11
+    },
+    {
+      "name": "Flight Warning Computer",
+      "filename": "12_flight_warning_computer",
+      "id": 12
+    },
+    {
+      "name": "Autopilot",
+      "filename": "20_autopilot",
+      "id": 20
+    },
+    {
+      "name": "Flight Control Computer",
+      "filename": "99_flight_control_computer",
+      "id": 99
+    },
+    {
+      "name": "Aircraft",
+      "filename": "",
+      "id": 100
+    },
+    {
+      "name": "Cockpit Displays",
+      "filename": "",
+      "id": 101
+    },
+    {
+      "name": "Cabin Displays",
+      "filename": "",
+      "id": 102
     }
   ]
 }

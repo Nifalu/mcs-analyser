@@ -61,8 +61,11 @@ class OutputChecker:
             args[1],
             state.copy()
         )
+        if data.is_symbolic():
+            data.set_label('symbolic' if data.constraints else 'unconstrained')
+        else:
+            data.set_label('concrete')
 
-        data.set_label('symbolic' if data.is_symbolic() else 'concrete')
         CANBus.write(Message(self.component.cid, dest_cid, data))
 
 

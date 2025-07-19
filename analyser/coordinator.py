@@ -11,13 +11,14 @@ class Coordinator:
     vc = VisualizationClient()
     type_color_map = {
         # Nodes
-        "source component": "#9FE2BF",
-        "sink component": "#CCCCFF",
-        "component": "#6495ED",
+        "source component": "#20BAA6",
+        "component": "#596BE2",
+        "sink component": "#59AFE2",
         # Edges
-        "symbolic": "#FFBF00",
-        "concrete": "#DE3163",
-        "unconstrained": "#FF0000"
+        "symbolic": "#596BE2",
+        "concrete": "#2034BA",
+        "given unconstrained input": "#20BAA6",
+        "unconstrained": "#EC7D46"
     }
     node_labels = ['type', 'path', 'name']
     edge_labels = ['type', 'source', 'target', 'bv', 'value', 'constraints']
@@ -37,20 +38,23 @@ class Coordinator:
             # First iteration: Retrieve Data Flow Information
             for component in bus.components.values():
                 MCSAnalyser(component, run_with_unconstrained_inputs=True, count_inputs=True)
+                cls._visualize(bus.graph)
 
             # Color all edges from this unconstrained run in red
-            nx.set_edge_attributes(bus.graph, "unconstrained", "type")
+            nx.set_edge_attributes(bus.graph, "given unconstrained input", "type")
 
             leaf_nodes = set()
             for node, component in bus.graph.nodes.data('component'):
                 if bus.graph.in_degree(node) == 0:
                     leaf_nodes.add(node)
                     bus.graph.nodes[node]['type'] = 'source component'
+                    bus.graph.nodes[node]['description'] = 'Component reads arbitrary (unconstrained) input'
                 elif bus.graph.out_degree(node) == 0:
                     bus.graph.nodes[node]['type'] = 'sink component'
+                    bus.graph.nodes[node]['description'] = 'Virtual component that collects the "final" outputs of other components'
                 else:
                     bus.graph.nodes[node]['type'] = 'component'
-
+                    bus.graph.nodes[node]['description'] = 'Component that computes some output(s) given an input(s)'
 
             # Second iteration: Do the analysis
             for node in leaf_nodes:
@@ -71,6 +75,7 @@ class Coordinator:
 
                     MCSAnalyser(component)
                     analyzed.append(node)
+                    cls._visualize(bus.graph)
 
             cls._visualize(bus.graph)
 
@@ -80,7 +85,9 @@ class Coordinator:
     def _visualize(cls, graph):
         cls.vc.send_graph(
             graph,
+            title="MCS Data Flow",
             node_labels=cls.node_labels,
             edge_labels=cls.edge_labels,
             type_color_map=cls.type_color_map
         )
+        input()

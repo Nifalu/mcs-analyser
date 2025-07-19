@@ -61,10 +61,17 @@ class PrintfParser(OutputFunctionParser):
             raise NotImplementedError(f"Architecture {arch_name} not supported")
 
     def _count_format_specifiers(self, format_str):
-        """Count format specifiers in a format string"""
+        """Count the number of arguments needed by format string"""
+        # Remove escaped percent signs
         format_str = format_str.replace('%%', '')
-        specifiers = re.findall(r'%[diouxXeEfFgGaAcspn]', format_str)
-        return len(specifiers)
+
+        # Count regular format specifiers
+        count = len(re.findall(r'%', format_str))
+
+        # Add extra arguments for * width/precision specifiers
+        count += format_str.count('*')
+
+        return count
 
     def _get_printf_args(self, state, num_args):
         """Get printf arguments based on calling convention"""

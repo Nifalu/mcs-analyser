@@ -30,13 +30,31 @@ class Coordinator:
         :return:
         """
 
+        """
+        Phase 1:
+        Retrieve information about the participants in the canbus system.
+        - What message types (ids) are available? -> retrieved during Canbus initialization.]
+        - Who produces and consumes which messages? 
+        """
         if config_path:
             CANBus.init(config_path)
 
         with CANBus() as bus:
-
-            # First iteration: Retrieve Data Flow Information
             for component in bus.components.values():
+                if component.is_virtual:
+                    continue
+
+                subscriptions: list[int] = MCSAnalyser.extract_symbols(component.path)
+
+                mcsa = MCSAnalyser(component)
+                mcsa.analyse()
+
+                consumed_sources = mcsa.consumed_sources
+
+                bus.write(component, consumed_msg)
+
+
+
                 MCSAnalyser(component, run_with_unconstrained_inputs=True, count_inputs=True)
                 cls._visualize(bus.graph)
 

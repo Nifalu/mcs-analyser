@@ -1,11 +1,15 @@
 import itertools
 import re
 import angr
+import claripy.ast.bv as bv_module
 from math import factorial
 from angr import SimState, SimulationManager
 
+
 from analyser.config import Config
 from analyser.input_hooks import InputHookRegistry
+from analyser.input_tracker import \
+    InputTracker
 from analyser.output_checker import setup_output_checker
 from analyser.can_simulator import Component, Message, CANBus
 from analyser.io_state import IOState
@@ -16,27 +20,21 @@ NUM_FIND = 100
 
 class MCSAnalyser:
 
-    def __init__(self, component: Component, run_with_unconstrained_inputs: bool = False, count_inputs = False):
-        if not component.path or not component.path.is_file():
-            log.info(f"Treating {component} as virtual component as no valid file found at path")
-            return
+    def __init__(self, component: Component):
         self.component: Component = component
-        self.run_with_unconstrained_inputs = run_with_unconstrained_inputs
-        self.proj = angr.Project(self.component.path, auto_load_libs=False)
-        self.cfg = self.proj.analyses.CFGEmulated()
-        self.current_input_iterator = None
-        self.current_input_list = None
+
         self.output_addrs = None
         self.output_checker = None
+
+        self.produced_msg_ids: set[IOState] = set()
+        self.consumed_sources: set[int] = set()
+
         self.input_hook_registry: InputHookRegistry = InputHookRegistry()
-        self.count_inputs: bool = count_inputs
-        self.current_input_counter = 0
-        self._analyse()
+        self.proj = angr.Project(self.component.path, auto_load_libs=False)
+        self.cfg = self.proj.analyses.CFGEmulated()
 
-
-
-    def _analyse(self) -> None:
-        log.info(f"\n=========== Analysing {self.component} ============")
+    def analyse(self) -> None:
+        log.info(f"\n=========== Going to Analyse {self.component} ============")
         input_addrs = self._find_addr(Config.input_hooks)
         log.info(f"Input Functions {[(name, hex(addr)) for addr, name in input_addrs.items()]}")
         entry_points = self._get_sim_states(input_addrs.keys())
@@ -46,33 +44,30 @@ class MCSAnalyser:
 
         for addr, func_name in input_addrs.items():
             if not self.proj.is_hooked(addr):
-                hook = self.input_hook_registry.create_hook(func_name, self.yield_input)
+                hook = self.input_hook_registry.create_hook(func_name)
                 self.proj.hook(addr, hook)
                 log.debug(f"Hooked {func_name} at {hex(addr)} with {hook.__class__.__name__}")
 
-        if self.run_with_unconstrained_inputs:
-            log.info(f"Running with unconstrained inputs on {len(entry_points)} entry points")
+        if self.component.max_expected_inputs == 0:
+            InputTracker.new(self.component.name)
             self._run_analysis(entry_points)
         else:
-            input_combinations = self._generate_input_combinations(
-                length=self.component.expected_inputs)
+            input_combinations = self._generate_input_combinations(length=self.component.max_expected_inputs)
             for i, combination in enumerate(input_combinations):
-                log.info(f"Analyzing input combination {i} for {self.component}")
-                self.current_input_list = list(self._flatten_combinations(combination))
+                InputTracker.new(self.component.name, combination)
                 self._run_analysis(entry_points)
 
-
     def _run_analysis(self, entry_points: list[SimState]) -> None:
-        self._reset_claripy_symvar_counter()
         for entry_point in entry_points:
-            entry_point_copy = entry_point.copy()
-            if not self.run_with_unconstrained_inputs:
-                self.current_input_iterator = iter(self.current_input_list)
 
+            InputTracker.soft_reset()
+            bv_module.var_counter = itertools.count()
+
+            entry_point_copy = entry_point.copy()
             entry_point_copy.inspect.b(
                 'call',
                 when=angr.BP_BEFORE,
-                action=lambda state: self.output_checker.check_output(state, self.output_addrs.keys())
+                action=lambda state: self._capture_output(state)
             )
             simgr: SimulationManager = self.proj.factory.simgr(entry_point_copy)
 
@@ -86,21 +81,13 @@ class MCSAnalyser:
 
             log.debug(f"Found {len(simgr.found)} solutions")
 
-    def yield_input(self) -> IOState | int:
-        """
-        A Hook for the Hook to retrieve the next input.
-        :return:
-        """
-        if self.count_inputs:
-            self.component.expected_inputs += 1
-        try:
-            if self.run_with_unconstrained_inputs:
-                self.current_input_counter += 1
-                return IOState.unconstrained(f"{self.component.name}_input_{self.current_input_counter}")
-            return next(self.current_input_iterator)
-        except StopIteration:
-            log.error("Requested more inputs than available... => Creating unconstrained input")
-            return IOState.unconstrained(f"{self.component.name}_unconstrained")
+    def _capture_output(self, state: SimState):
+            result: Message | None = self.output_checker.check(state, self.output_addrs.keys())
+            if result is not None:
+                self.component.update_max_expected_inputs(InputTracker.max_inputs_counted)
+                self.consumed_sources.union(InputTracker.get_consumed_sources())
+                self.produced_msg_ids.add(result.msg_id)
+            return result
 
     def _find_addr(self, names: list[str]):
         """
@@ -127,10 +114,6 @@ class MCSAnalyser:
             log.warning(f"No addresses found for {pattern}")
         return found
 
-    @staticmethod
-    def _reset_claripy_symvar_counter():
-        import claripy.ast.bv as bv_module
-        bv_module.var_counter = itertools.count()
 
     def _get_sim_states(self, addrs, entry_point: SimState=None) -> list[SimState]:
         """
@@ -163,7 +146,7 @@ class MCSAnalyser:
         Args:
             allow_repetition: Whether to allow selecting the same input multiple times (default: False)
             length: Length of permutations to generate (default: len(inputs))
-            warn_threshold: Number of combinations above which to print a warning
+            warn_threshold: Number of combinations above which to log.debug a warning
 
         Yields:
             Lists representing permutations of the inputs
@@ -206,7 +189,65 @@ class MCSAnalyser:
     @staticmethod
     def _flatten_combinations(combination: tuple[Message, ...] | tuple[Message, Message]):
         for c in combination:
-            yield c.dest      # Yield destination IOState
-            log.debug(f"Yielded destination {c.dest}")
+            log.debug(f"Yielding msg_id {c.msg_id}")
+            yield c.msg_id      # Yield destination IOState
+            log.debug(f"Yielding msg_data {c.msg_data}")
             yield c.msg_data  # Yield data IOState
-            log.debug(f"Yielded data {c.msg_data}")
+
+    @staticmethod
+    def extract_symbols(binary_path, prefix="subscriptions", extract_array=True) -> list[int] | dict[int, str]:
+        """
+        Extract symbols from a compiled binary.
+
+        Args:
+            binary_path: Path to the binary file
+            prefix: Symbol prefix to search for (e.g., "subscriptions", "MSG_")
+            extract_array: If True, treat symbol as array and extract all elements.
+                          If False, just extract single value.
+
+        Returns:
+            - If extract_array=True: List of values from the array
+            - If extract_array=False: Dict of {symbol_name: value}
+        """
+        try:
+            proj = angr.Project(binary_path, auto_load_libs=False)
+        except Exception as e:
+            log.error(f"Error loading binary: {e} during symbol extraction")
+            return None if extract_array else {}
+
+        log.debug(f"Loaded binary: {binary_path}")
+
+        results = [] if extract_array else {}
+
+        for symbol in proj.loader.main_object.symbols:
+            if not symbol.name:
+                continue
+
+            # Check if symbol starts with prefix (with or without underscore)
+            clean_name = symbol.name.lstrip('_')
+            if clean_name.startswith(prefix):
+                log.debug(f"Found symbol: {symbol.name} at 0x{symbol.rebased_addr:x}, size: {symbol.size}")
+
+                if hasattr(symbol, 'size') and symbol.size > 0:
+                    if extract_array:
+                        # Extract array elements
+                        num_elements = symbol.size // 8
+                        values = []
+                        for i in range(num_elements):
+                            addr = symbol.rebased_addr + (i * 8)
+                            value = proj.loader.memory.unpack_word(addr, size=8)
+                            values.append(value)
+
+                        return values  # Return first matching array
+                    else:
+                        # Extract single value
+                        value = proj.loader.memory.unpack_word(symbol.rebased_addr, size=8)
+                        if results[value]:
+                            raise(ValueError(f"Multiple Message ID's with the same name detected: {value}"))
+                        results[value] = clean_name
+
+        if extract_array:
+            log.warning(f"No symbols starting with '{prefix}' found in binary")
+            return None
+        else:
+            return results

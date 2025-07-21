@@ -22,7 +22,7 @@ class OutputChecker:
         """Register a custom parser"""
         self.parser_registry.register_parser(parser)
 
-    def check_output(self, state: angr.SimState, output_func_addrs: list[int]) -> None:
+    def check(self, state: angr.SimState, output_func_addrs: list[int]) -> Message | None:
         """
         Check if the current call is to an output function, and if so, extract symbolic arguments.
         Save symbolic outputs into state.globals['output_constraints'].
@@ -30,7 +30,7 @@ class OutputChecker:
         call_target = state.inspect.function_address
         concrete_call_target = state.solver.eval(call_target, cast_to=int)
         if concrete_call_target not in output_func_addrs:
-            return
+            return None
 
         log.debug(f"Output function called at {hex(concrete_call_target)}")
 
@@ -38,35 +38,31 @@ class OutputChecker:
         parser = self.parser_registry.get_parser(concrete_call_target)
         if parser is None:
             log.warning(f"No parser found for function at {hex(concrete_call_target)}")
-            return
+            return None
 
         # Parse arguments using the appropriate parser
         try:
             args = parser.parse_arguments(state)
         except Exception as e:
             log.error(f"Error parsing arguments: {e}")
-            return
+            return None
 
         if len(args) != 2:
             log.error(f"Irregular output format {args} for state {hex(state.addr)}")
-            return
+            return None
 
-        if args[0].concrete:
-            dest_cid = args[0].concrete_value
+        if args[0].symbolic:
+            log.critical(f"\nMessage with symbolic type from {self.component}:\n{args[0]}\n")
+
+        msg_id: IOState = IOState.from_state(args[0], state.copy())
+        msg_data: IOState = IOState.from_state(args[1], state.copy())
+
+        if msg_data.is_symbolic():
+            msg_data.set_label('symbolic' if msg_data.constraints else 'unconstrained')
         else:
-            log.critical(f"Message with symbolic destination from {self.component}:\n{args[0]}")
-            return
+            msg_data.set_label('concrete')
 
-        data: IOState = IOState.from_state(
-            args[1],
-            state.copy()
-        )
-        if data.is_symbolic():
-            data.set_label('symbolic' if data.constraints else 'unconstrained')
-        else:
-            data.set_label('concrete')
-
-        CANBus.write(Message(self.component.cid, dest_cid, data))
+        return Message(self.component.cid, msg_id, msg_data)
 
 
 def setup_output_checker(component: Component, output_addrs) -> OutputChecker:

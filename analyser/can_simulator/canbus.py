@@ -5,6 +5,8 @@ from networkx import MultiDiGraph
 from analyser.can_simulator.component import Component
 from analyser.can_simulator.message import Message
 from analyser.config import Config
+from analyser.mcs_analyser import \
+    MCSAnalyser
 from utils.logger import logger
 log = logger(__name__)
 
@@ -23,17 +25,27 @@ class CANBus:
         with open(path, 'r') as f:
             data = load(f)
         components_dir = Path(data['components_dir'])
+        symbols = None
         for comp in data['components']:
+            path = Path(components_dir, comp['filename'])
+
+            virtual = not path or not path.is_file()
+
             component = Component(
                 name=comp['name'],
                 cid=int(comp['id']),
-                path=Path(components_dir, comp['filename'])
+                path=Path(components_dir, comp['filename']),
+                is_virtual=virtual
             )
             cls._register(component)
 
+            if not virtual and not symbols:
+                symbols = MCSAnalyser.extract_symbols(component.path, prefix="MSG_", extract_array=False)
+
         Config.init(data['var_length'],
             data['input_hooks'],
-            data['output_hooks']
+            data['output_hooks'],
+            symbols
         )
 
         cls._initialized = True
@@ -59,7 +71,7 @@ class CANBus:
         if edge_dict:
             for key, edge in edge_dict.items():
                 if msg.msg_data.equals(edge['msg_data']):
-                    log.debug(f"Found edge ({source_name} -> {dest_name}) with identical constraints")
+                    log.warning(f"Found edge ({source_name} -> {dest_name}) with identical constraints")
                     return
 
         if msg.msg_data.is_symbolic():

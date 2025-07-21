@@ -6,6 +6,8 @@ import \
 
 from analyser.config import \
     Config
+from analyser.input_tracker import \
+    InputTracker
 from analyser.io_state import IOState
 from utils.logger import logger
 log = logger(__name__)
@@ -13,9 +15,8 @@ log = logger(__name__)
 class InputHookBase(angr.SimProcedure):
     """Base class for input function hooks"""
 
-    def __init__(self, input_generator):
+    def __init__(self):
         super().__init__()
-        self.input_generator = input_generator
 
     @abstractmethod
     def run(self, *args, **kwargs):
@@ -30,7 +31,7 @@ class InputHookBase(angr.SimProcedure):
 
     def get_next_input(self) -> claripy.ast.BV:
         """Common method to get next input and handle constraints"""
-        next_input = self.input_generator()
+        next_input = InputTracker.get_next_input()
         if isinstance(next_input, IOState):
             if next_input.constraints:
                 self.state.solver.add(*next_input.constraints)
@@ -139,11 +140,11 @@ class InputHookRegistry:
 
         return None
 
-    def create_hook(self, func_name: str, input_generator):
+    def create_hook(self, func_name: str):
         """Create a hook instance for the given function"""
         hook_class = self.get_hook_class(func_name)
         if hook_class:
-            return hook_class(input_generator)
+            return hook_class()
         else:
             log.error(f"Could not create hook for '{func_name}'")
             raise Exception(f"Could not find a hook for '{func_name}'")

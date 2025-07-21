@@ -6,11 +6,6 @@ from claripy.solvers import Solver as clSolver
 from angr import SimState
 from typing import Iterable
 
-# pretty printing
-from rich.console import Console
-from rich.table import Table
-from rich.panel import Panel
-
 from analyser.config import \
     Config
 from utils.logger import logger
@@ -30,6 +25,7 @@ class IOState:
         self.label = label
         self.bv: cl_ast.BV = bv
         self.constraints: list[cl_ast.Bool] = list(constraints)
+        self._hash = None
 
     @classmethod
     def unconstrained(
@@ -92,80 +88,36 @@ class IOState:
         Check if two IOState objects have constraints that define the same solution space.
 
         Returns True if the IOStates represent equivalent solution spaces, even if they
-        use different bitvector variables.
+        use different bitvector variables or have different lengths (if one is derived
+        from the other through operations like extraction, extension, etc.).
         """
         log.debug(f"Comparing {self.bv} and {other.bv}")
         log.debug(f"with constraints:\n {self.constraints}\n {other.constraints}")
 
-        # Early checks
-        if not self.constraints and not other.constraints:
-            return True  # Both unconstrained
-
-        if bool(self.constraints) != bool(other.constraints):
-            return False  # One constrained, one not
-
-        # Check if both are concrete and compare values
+        # if both are concrete and have the same value, they are equal
         if self.is_concrete() and other.is_concrete():
-            return self.bv.concrete_value == other.bv.concrete_value
+            return self.bv.concrete == other.bv.concrete_value
 
+        # If just one is concrete, they can't be equal
         if self.is_concrete() != other.is_concrete():
-            return False  # One concrete, one symbolic
-
-        # Check if bitvectors have the same length
-        if self.bv.length != other.bv.length:
             return False
 
-        # For symbolic cases, we need to check if the constraints define the same space
-        # even if they use different variable names
+        # Case where both bv have same length:
+        if self.bv.length == other.bv.length:
 
-        # Special case: if both have single-variable constraints only on their respective bvs
-        self_vars = set()
-        for c in self.constraints:
-            self_vars.update(c.variables)
+            # If both are unconstrained, they must be equal
+            if not self.constraints and not other.constraints:
+                return True
 
-        other_vars = set()
-        for c in other.constraints:
-            other_vars.update(c.variables)
-
-        # If constraints only reference their respective bitvector variables
-        if self_vars == {self.bv} and other_vars == {other.bv}:
-            # Create a substitution mapping
-            substitution = {self.bv: other.bv}
-
-            # Substitute variables in self.constraints
-            substituted_constraints = []
-            for c in self.constraints:
-                substituted = c.replace(substitution)
-                substituted_constraints.append(substituted)
-
-            # Check if substituted constraints are equivalent to other.constraints
-            # by checking mutual implication
-            solver1 = claripy.Solver()
-            solver1.add(substituted_constraints)
-            if other.constraints:
-                c2_conjunction = claripy.And(*other.constraints) if len(other.constraints) > 1 else other.constraints[0]
-                solver1.add(claripy.Not(c2_conjunction))
-
-            if solver1.satisfiable():
+            # If just one is constrained, they can't be equal
+            if bool(self.constraints) != bool(other.constraints):
                 return False
-
-            solver2 = claripy.Solver()
-            solver2.add(other.constraints)
-            if substituted_constraints:
-                c1_conjunction = claripy.And(*substituted_constraints) if len(substituted_constraints) > 1 else substituted_constraints[0]
-                solver2.add(claripy.Not(c1_conjunction))
-
-            if solver2.satisfiable():
-                return False
-
-            return True
-
-        # General case: check if constraint sets are equivalent
-        # This works for the original case but not for renamed variables
+            
+        
+        """Check if two constraint sets mutually imply each other."""
+        # Check if self.constraints implies other.constraints
         solver1 = claripy.Solver()
-        for c in self.constraints:
-            solver1.add(c)
-
+        solver1.add(self.constraints)
         if other.constraints:
             c2_conjunction = claripy.And(*other.constraints) if len(other.constraints) > 1 else other.constraints[0]
             solver1.add(claripy.Not(c2_conjunction))
@@ -173,10 +125,9 @@ class IOState:
         if solver1.satisfiable():
             return False
 
+        # Check if other.constraints implies self.constraints
         solver2 = claripy.Solver()
-        for c in other.constraints:
-            solver2.add(c)
-
+        solver2.add(other.constraints)
         if self.constraints:
             c1_conjunction = claripy.And(*self.constraints) if len(self.constraints) > 1 else self.constraints[0]
             solver2.add(claripy.Not(c1_conjunction))
@@ -185,6 +136,7 @@ class IOState:
             return False
 
         return True
+
 
 
     def pretty(self, max_len: int = 96) -> str:
@@ -203,48 +155,55 @@ class IOState:
             lines.append("    " + txt)
         return "\n".join(lines)
 
-    def __repr__(self) -> str:  # pragma: no cover
-        return f"<OutputCapsule name={self.bv!r} bits={self.bv.length} constraint_length={len(self.constraints)}>"
+    def __repr__(self) -> str:
+        return f"<IOState name={self.bv!r} bits={self.bv.length} constraint_length={len(self.constraints)}>"
 
+    def __str__(self) -> str:
+        return f"<IOState name={self.bv!r} bits={self.bv.length} constraint_length={len(self.constraints)}>"
 
-    def print_rich(self, max_len: int = 96) -> None:
+    def __eq__(self, other) -> bool:
+        if not isinstance(other, IOState):
+            return False
+        return self.equals(other)
+
+    def __hash__(self) -> int:
         """
-        Pretty-print this IOState to the terminal using *rich*.
+        Compute a hash for this IOState.
 
-        • Concrete capsule  → single-row table with the fixed value.
-        • Symbolic capsule  → table with bit-width, min, max plus a panel that
-          lists (and truncates) every constraint in the slice.
+        Note: This hash function is designed to be consistent with equals() but
+        may have collisions. Two IOStates that are equal according to equals()
+        will have the same hash, but two IOStates with the same hash may not be equal.
         """
-        console = Console()
+        if self._hash is not None:
+            return self._hash
 
         if self.is_concrete():
-            table = Table(title=f"IOState <{self.bv}>")
-            table.add_column("Bit-width", justify="right")
-            table.add_column("Value",     justify="right")
-            table.add_row(str(self.bv.length), hex(self.bv.args[0]))
-            console.print(table)
-            return
+            # For concrete values, hash the value and the bit length
+            self._hash = hash((self.bv.concrete_value, self.bv.length, "concrete"))
+        else:
+            # For symbolic values, we can't easily create a perfect hash that's
+            # consistent with our semantic equality check. We'll use a hash that
+            # ensures equal objects have the same hash, but may have collisions.
 
-        # --------------------------- symbolic --------------------------------
-        lo, hi = self.range()
+            # Hash based on bit length and whether it has constraints
+            basic_hash = hash((
+                self.bv.length,
+                len(self.constraints),
+                bool(self.constraints),
+                "symbolic"
+            ))
 
-        meta = Table(title=f"IOState <{self.bv}>")
-        meta.add_column("Field")
-        meta.add_column("Value", justify="right")
-        meta.add_row("Bit-width", str(self.bv.length))
-        meta.add_row("min",       hex(lo))
-        meta.add_row("max",       hex(hi))
+            # Add some constraint structure information to reduce collisions
+            if self.constraints:
+                # Sort constraints by their string representation for consistency
+                constraint_strs = sorted(str(c) for c in self.constraints)
+                # Use first few characters of each constraint
+                constraint_sample = "".join(s[:20] for s in constraint_strs[:10])
+                constraint_hash = hash(constraint_sample)
+                self._hash = hash((basic_hash, constraint_hash))
+            else:
+                self._hash = basic_hash
 
-        console.print(meta)
+        return self._hash
 
-        if self.constraints:
-            trimmed: list[str] = []
-            for c in self.constraints:
-                txt = str(c)
-                if len(txt) > max_len:
-                    txt = txt[:max_len] + "…"
-                trimmed.append(txt)
 
-            console.print(
-                Panel("\n".join(trimmed), title="Slice constraints", expand=False)
-            )

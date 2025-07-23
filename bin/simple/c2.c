@@ -1,16 +1,17 @@
+// rpm_sensor.c
 #include <stdio.h>
 #include <stdint.h>
-
-/*----- Component 2 -----*/
+#include "can_messages.h"
 
 int main() {
-    uint64_t recipient = 3;
-    uint64_t input;
+    uint64_t rpm_reading;
 
-    scanf("%u", &input);  // receive arbitrary input
+    // Read RPM from external sensor (arbitrary input)
+    scanf("%lu", &rpm_reading);
 
-    if ((30 > input && input > 20) || input == 99) {
-        printf("%u%u\n", recipient, input);
+    // Validate and send RPM data
+    if (rpm_reading < 8000) {  // Max 8000 RPM
+        printf("%lu%lu\n", MSG_ENGINE_RPM, rpm_reading);
     }
 
     return 0;

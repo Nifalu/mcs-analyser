@@ -60,7 +60,7 @@ class ScanfHook(InputHookBase):
             next_input = InputTracker.get_next_input()
             if next_input.constraints:
                 self.state.solver.add(*next_input.constraints)
-                self.state.memory.store(ptr, next_input.bv, endness=self.state.arch.memory_endness)
+            self.state.memory.store(ptr, next_input.bv, endness=self.state.arch.memory_endness)
 
         return
 

@@ -36,7 +36,7 @@ class Coordinator:
         Phase 1:
         Retrieve information about the participants in the canbus system.
         - What message types (ids) are available? -> retrieved during Canbus initialization.]
-        - Who produces and consumes which messages? 
+        - Who produces and consumes which messages? -> tracked in unconstrained mode
         """
         if config_path:
             CANBus.init(config_path)
@@ -49,18 +49,8 @@ class Coordinator:
                 mcsa = MCSAnalyser(component) # Runs in unconstrained mode because the Components have expected input = 0
                 mcsa.analyse()
 
-                subscriptions = []
-                for msg_id in component.subscriptions:
-                    subscriptions.append(Config.message_name_lookup[msg_id])
-
-                #subscriptions = [Config.message_name_lookup[msg_id] for msg_id in component.subscriptions]
-                log.error(f"{component} subscribes to {subscriptions} | {component.subscriptions}")
-
-                #produced = [Config.message_name_lookup[msg_idx] for msg_idx in mcsa.produced_msg_ids]
-                #log.error(f"{component} produced {produced}")
-
-                input(" == Works up to here == ")
-
+            input("We're good up until here")
+            
             cls._analyze_in_dependency_order(bus)
 
             # Color all edges from this unconstrained run in red

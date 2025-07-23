@@ -4,6 +4,8 @@ import re
 
 import claripy
 
+from analyser.config import \
+    Config
 from analyser.input_tracker import InputTracker
 from analyser.can_simulator import Component, Message
 from analyser.output_parser import OutputParserRegistry, OutputFunctionParser
@@ -58,6 +60,7 @@ class OutputChecker:
         if  args[0].symbolic:
             log.critical(f"{self.component} sent a message with symbolic type\n{args[0]}\n")
 
+        log.debug(f"==> Outputs {args[0]} (msg_id) and {args[1]} (msg_data)")
         msg_id: IOState = IOState.from_state(args[0], state.copy())
         msg_data: IOState = IOState.from_state(args[1], state.copy())
 
@@ -84,69 +87,44 @@ class OutputChecker:
             log.debug(f"Reached output with just a single input in {self.component.name}. Is it an external sensor?")
             return
 
-        #Debug state info
-        log.error(f"State has {len(state.solver.constraints)} constraints")
-        log.error(f"All variables in state: {state.solver.all_variables}")
-
-        # Let's look at the constraints to find our variables
-        all_constraint_vars = set()
-        for constraint in state.solver.constraints:
-            all_constraint_vars.update(constraint.variables)
-        log.error(f"All variables in constraints: {all_constraint_vars}")
-
-        # Look at every second input (msg_ids)
+        # Look at constraints to find msg_id values (every second input)
         for i in range(0, number_of_inputs, 2):
-            # The variable name we're looking for
             var_name = f"{self.component.name}_input_{i+1}"
-
             log.debug(f"Looking for constraints on variable: {var_name}")
 
-            # Find all variables in the state with this name
-            found_var = None
-            for var in state.solver.all_variables:
-                if var.startswith(var_name):  # startswith because angr might append suffixes
-                    found_var = var
-                    break
+            for constraint in state.solver.constraints:
+                constraint_str = str(constraint)
 
-            if not found_var:
-                log.warning(f"Could not find variable {var_name} in state")
-                continue
-
-            # Create a BV with this variable name to evaluate
-            msg_id_bv = claripy.BVS(found_var, Config.default_var_length)
-
-            try:
-                if state.solver.unique(msg_id_bv):
-                    value = state.solver.eval(msg_id_bv, cast_to=int)
-                    self.component.subscriptions.add(value)
-                    log.info(f"Component subscribes to msg_id {value}")
-                else:
-                    possible_values = state.solver.eval_upto(msg_id_bv, 20, cast_to=int)
-                    if len(possible_values) < 20:
-                        self.component.subscriptions.update(possible_values)
-                        log.info(f"Component subscribes to msg_ids {possible_values}")
-                    else:
-                        log.warning(f"{var_name} appears unconstrained")
-            except Exception as e:
-                log.error(f"Exception while evaluating {var_name}: {e}")
-
-
-                """
-                input_var_name = msg_id.name
-
-                for constraint in state.solver.constraints:
-                    constraint_str = str(constraint)
-
-                    if input_var_name in constraint_str and '==' in constraint_str:
-                        matches = re.findall(r'== (?:0x)?([0-9a-fA-F]+)(?:\s|>|$)', constraint_str)
-                        for match in matches:
-                            try:
+                # Look for equality constraints on our variable
+                if var_name in constraint_str and '==' in constraint_str:
+                    # CHANGE: Capture the full number including 0x prefix if present
+                    matches = re.findall(rf'{re.escape(var_name)}\s*==\s*(0x[0-9a-fA-F]+|[0-9]+)', constraint_str)
+                    for match in matches:
+                        try:
+                            # Now match will include '0x' if present
+                            if match.startswith('0x'):
                                 value = int(match, 16)
-                                self.component.subscriptions.add(value)
-                                log.info(f"Component appears to read msg_id {value}")
-                            except ValueError:
-                                pass
-                                """
+                            else:
+                                value = int(match, 10)
+
+                            self.component.add_subscription(value)
+
+                        except ValueError as e:
+                            log.error(f"Failed to parse value from {match}: {e}")
+
+                    # Also check for reverse pattern "0x100 == variable"
+                    matches = re.findall(rf'(0x[0-9a-fA-F]+|[0-9]+)\s*==\s*{re.escape(var_name)}', constraint_str)
+                    for match in matches:
+                        try:
+                            if match.startswith('0x'):
+                                value = int(match, 16)
+                            else:
+                                value = int(match, 10)
+
+                            self.component.add_subscription(value)
+
+                        except ValueError as e:
+                            log.error(f"Failed to parse value from {match}: {e}")
 
 
 def setup_output_checker(component: Component, output_addrs) -> OutputChecker:

@@ -1,5 +1,10 @@
 from pathlib import Path
 
+from analyser.config import \
+    Config
+from utils.logger import logger
+log = logger(__name__)
+
 class Component:
     def __init__(self, name: str, path: Path, cid: int, is_virtual: bool = False):
         self.name = name
@@ -9,6 +14,7 @@ class Component:
         self.is_virtual = is_virtual
 
         self.subscriptions: set[int] = set()
+        self.produced_msg_ids: set[int] = set()
 
     def update_max_expected_inputs(self, number_of_inputs: int):
         if number_of_inputs > self.max_expected_inputs:
@@ -16,6 +22,18 @@ class Component:
 
     def reset_max_expected_inputs(self):
         self.max_expected_inputs = 0
+
+    def add_subscription(self, subscription):
+        if subscription not in self.subscriptions:
+            subscription_str = Config.message_name_lookup.get(subscription, str(subscription))
+            log.info(f"{self} does read {[subscription_str]} (0x{subscription:x}) messages")
+            self.subscriptions.add(subscription)
+
+    def add_produced_msg_id(self, msg_id):
+        if msg_id not in self.produced_msg_ids:
+            produced_msg_type_str = Config.message_name_lookup.get(msg_id, str(msg_id))
+            log.info(f"{self} produces {[produced_msg_type_str]} (0x{msg_id:x}) messages")
+            self.produced_msg_ids.add(msg_id)
 
     def __repr__(self):
         return f'Component({self.name}, id: {self.cid}, path: {self.path})'

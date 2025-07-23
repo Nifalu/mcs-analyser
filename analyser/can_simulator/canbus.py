@@ -116,10 +116,9 @@ class CANBus:
             # Check if symbol starts with prefix (with or without underscore)
             clean_name = symbol.name.lstrip('_')
             if clean_name.startswith(prefix):
-                log.debug(f"Found symbol: {symbol.name} at 0x{symbol.rebased_addr:x}, size: {symbol.size}")
-
                 if hasattr(symbol, 'size') and symbol.size > 0:
                     value = proj.loader.memory.unpack_word(symbol.rebased_addr, size=8)
+                    log.info(f"Extracted {clean_name} = {value} (0x{value:x})")  # Print both decimal and hex
                     if value in results:
                         raise(ValueError(f"Multiple Message ID's with the same name detected: {value}"))
                     results[value] = clean_name

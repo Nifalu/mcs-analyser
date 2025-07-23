@@ -1,16 +1,17 @@
+// temp_sensor.c
 #include <stdio.h>
 #include <stdint.h>
-
-/*----- Component 1 -----*/
+#include "can_messages.h"
 
 int main() {
-    uint64_t recipient = 3;
-    uint64_t input;
+    uint64_t temp_reading;
 
-    scanf("%u", &input);  // receive arbitrary input
+    // Read temperature from external sensor (arbitrary input)
+    scanf("%lu", &temp_reading);
 
-    if (20 > input && input > 10) {
-        printf("%u%u\n", recipient, input);
+    // Validate and send temperature data
+    if (temp_reading < 300) {  // Max 300 degrees
+        printf("%lu%lu\n", MSG_ENGINE_TEMP, temp_reading);
     }
 
     return 0;

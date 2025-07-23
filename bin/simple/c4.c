@@ -1,16 +1,21 @@
+// dashboard.c
 #include <stdio.h>
 #include <stdint.h>
-
-/*----- Component 4 -----*/
+#include "can_messages.h"
 
 int main() {
-    uint64_t recipient = 5;
-    uint64_t input;
+    uint64_t rx_msg_id;
+    uint64_t rx_msg_data;
 
-    scanf("%u", &input);  // receive arbitrary input
+    // Read CAN message
+    scanf("%lu%lu", &rx_msg_id, &rx_msg_data);
 
-    if (50 > input && input > 40) {
-        printf("%u%u\n", recipient, input);
+    // Only process engine health messages
+    if (rx_msg_id == MSG_ENGINE_HEALTH) {
+        // Display warning if health is low
+        if (rx_msg_data < 50) {
+            printf("%lu%lu\n", MSG_WARNING_LIGHT, 1);  // Turn on warning
+        }
     }
 
     return 0;

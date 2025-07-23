@@ -1,8 +1,5 @@
-import networkx as nx
 from schnauzer import VisualizationClient
 from analyser.can_simulator import CANBus
-from analyser.config import \
-    Config
 from analyser.mcs_analyser import MCSAnalyser
 from pathlib import Path
 from utils.logger import logger
@@ -42,98 +39,47 @@ class Coordinator:
             CANBus.init(config_path)
 
         with CANBus() as bus:
-            for component in bus.components.values():
+            for component in bus.components:
                 if component.is_virtual:
                     continue
 
                 mcsa = MCSAnalyser(component) # Runs in unconstrained mode because the Components have expected input = 0
                 mcsa.analyse()
 
-            input("We're good up until here")
-            
-            cls._analyze_in_dependency_order(bus)
-
-            # Color all edges from this unconstrained run in red
-            nx.set_edge_attributes(bus.graph, "given unconstrained input", "type")
-
-            leaf_nodes = set()
-            for node, component in bus.graph.nodes.data('component'):
-                if bus.graph.in_degree(node) == 0:
-                    leaf_nodes.add(node)
-                    bus.graph.nodes[node]['type'] = 'source component'
-                    bus.graph.nodes[node]['description'] = 'Component reads arbitrary (unconstrained) input'
-                elif bus.graph.out_degree(node) == 0:
-                    bus.graph.nodes[node]['type'] = 'sink component'
-                    bus.graph.nodes[node]['description'] = 'Virtual component that collects the "final" outputs of other components'
-                else:
-                    bus.graph.nodes[node]['type'] = 'component'
-                    bus.graph.nodes[node]['description'] = 'Component that computes some output(s) given an input(s)'
-
-
-            analyzed = list(leaf_nodes)
-            analyzed.append(0)
-            while len(analyzed) < len(bus.components.values()) + 1:
-                for node in bus.graph.nodes():
-                    if node in analyzed:
-                        continue
-                    predecessors = set(bus.graph.predecessors(node))
-                    if not predecessors.issubset(analyzed):
-                        continue
-
-                    component = bus.graph.nodes[node]['component']
-
-                    MCSAnalyser(component)
-                    analyzed.append(node)
-                    cls._visualize(bus.graph)
-
             cls._visualize(bus.graph)
 
-        print(f"Done! See http://{cls.vc.host}:{cls.vc.port} for results")
 
-    # In analyser/coordinator.py
+            analyser_dict = {} # cache analysers so that if we have to rerun a component we don't have to rebuild the cfg
+            for component in bus.components:
+                if component.is_virtual or not component.subscriptions:
+                    component.is_analysed = True
+
+            while True: # need to find a solution here:
+                for component in bus.components:
+                    if not component.is_analysed and cls._can_analyse(component, bus):
+                        mcsa = MCSAnalyser(component) # Runs in normal mode
+                        analyser_dict[component.name] = mcsa
+                        mcsa.analyse()
+                        component.is_analysed = True
+                cls._visualize(bus.graph)
+
+            print(f"Done! See http://{cls.vc.host}:{cls.vc.port} for results")
+
+
     @classmethod
-    def _analyze_in_dependency_order(cls, bus: CANBus):
-        """Analyze components in order based on their dependencies"""
-        analyzed = set()
-        message_buffer = []  # List of available messages
+    def _can_analyse(cls, c, bus) -> bool:
+        log.info(f"Checking if {[c.name]} can be analysed...")
+        log.info(f"it reads {c.subscriptions}")
+        log.info(f"bus can provide {bus.msg_types_in_buffer}")
+        for subscription in c.subscriptions:
+            if subscription not in bus.msg_types_in_buffer:
+                log.info(f"subscription {subscription} not in bus msg_types_in_buffer")
+                return False
+        if c.max_expected_inputs > len(bus.buffer):
+            log.info(f"Buffer can't provide enough messages.")
+            return False
+        return True
 
-        # Start with sensors (empty subscriptions)
-        for c in bus.components.values():
-            if c.is_virtual or not c.subscriptions:
-                analyzed.add(c)
-
-        log.info(f"\n=== Phase 2: Dependency-based analysis ===")
-        log.info(f"Found {len(analyzed)} sensor components")
-
-        # Now analyze components whose dependencies are satisfied
-        while len(analyzed) < len([c for c in bus.components.values() if not c.is_virtual]):
-            made_progress = False
-
-            for component in bus.components.values():
-                if component.is_virtual or component.cid in analyzed:
-                    continue
-
-                # Check if we can analyze this component
-                if cls._can_analyze(component, message_buffer):
-                    log.info(f"\nAnalyzing component: {component.name}")
-
-                    # Get relevant input combinations
-                    input_combinations = cls._get_input_combinations(component, message_buffer)
-
-                    # Analyze with each combination
-                    for combination in input_combinations:
-                        messages = cls._analyze_with_inputs(component, combination)
-                        message_buffer.extend(messages)
-
-                    analyzed.add(component.cid)
-                    made_progress = True
-
-            if not made_progress:
-                # No component can be analyzed - might have circular dependencies
-                remaining = [c.name for c in bus.components.values()
-                            if not c.is_virtual and c.cid not in analyzed]
-                log.warning(f"Cannot analyze remaining components: {remaining}")
-                break
 
 
     @classmethod
@@ -141,7 +87,8 @@ class Coordinator:
         cls.vc.send_graph(
             graph,
             title="MCS Data Flow",
-            node_labels=cls.node_labels,
-            edge_labels=cls.edge_labels,
-            type_color_map=cls.type_color_map
+            #node_labels=cls.node_labels,
+            #edge_labels=cls.edge_labels,
+            #type_color_map=cls.type_color_map
         )
+        input("Visualisation break")

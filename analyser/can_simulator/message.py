@@ -1,32 +1,34 @@
 from analyser.config import Config
 from analyser.io_state import IOState
 
+from utils.logger import logger
+log = logger(__name__)
+
 class Message:
-    def __init__(self,source_cid: int, msg_id: IOState, msg_data: IOState):
-        self.source_cid = source_cid
-        self.msg_id: IOState = msg_id
+    def __init__(self,producer_component_name: str, msg_id: IOState, msg_data: IOState):
+        if msg_id.is_symbolic():
+            log.warning(f"{producer_component_name} produced a message of symbolic type")
+            self.msg_type_str = "symbolic"
+        else:
+            self.msg_type_str = Config.message_name_lookup.get(msg_id.bv.concrete_value, str(msg_id.bv.concrete_value))
+        self.producer_component_name: str = producer_component_name
+        self.msg_type: IOState = msg_id
         self.msg_data: IOState = msg_data
 
     def __hash__(self):
-        return hash((self.source_cid, self.msg_id, self.msg_data))
+        return hash((self.producer_component_name, self.msg_type, self.msg_data))
 
     def __eq__(self, other):
         if not isinstance(other, Message):
             return False
-        return (self.source_cid == other.source_cid and
-                self.msg_id == other.msg_id and
+        return (self.producer_component_name == other.producer_component_name and
+                self.msg_type == other.msg_type and
                 self.msg_data == other.msg_data)
 
     def __repr__(self):
-        if self.msg_id.is_symbolic():
-            return f"Message(SYMBOLIC TYPE) BV: {self.msg_data.bv}, constraints: {self.msg_data.constraints}"
-        msg_name = Config.message_name_lookup.get(self.msg_id.bv.concrete_value, f"unknown-(id={self.msg_id.bv.concrete_value})")
-        return f"Message({msg_name} BV: {self.msg_data.bv}, constraints: {self.msg_data.constraints}"
+        return f"{[self.msg_type_str]} Message"
 
     def __str__(self):
-        if self.msg_id.is_symbolic():
-            return f"Message(SYMBOLIC TYPE) BV: {self.msg_data.bv}, constraints: {self.msg_data.constraints}"
-        msg_name = Config.message_name_lookup.get(self.msg_id.bv.concrete_value, f"unknown-(id={self.msg_id.bv.concrete_value})")
-        return f"Message({msg_name} BV: {self.msg_data.bv}, constraints: {self.msg_data.constraints}"
+        return f"{[self.msg_type_str]} Message"
 
 

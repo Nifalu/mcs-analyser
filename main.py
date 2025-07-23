@@ -1,6 +1,6 @@
 from utils.logger import logger, set_project_log_level, set_dependency_log_level
 from logging import DEBUG, INFO, WARNING, ERROR, CRITICAL
-set_project_log_level(DEBUG)
+set_project_log_level(INFO)
 set_dependency_log_level(ERROR)
 log = logger(__name__)
 from analyser.coordinator import Coordinator

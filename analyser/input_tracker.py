@@ -64,8 +64,8 @@ class InputTracker:
             idx, msg = next(cls.enumerator)
             if idx % 2 == 0:
                 cls.consumed_messages.add(msg)
-                log.debug(f"Yield msg_id {msg.msg_id}")
-                return msg.msg_id
+                log.debug(f"Yield msg_id {msg.msg_type}")
+                return msg.msg_type
             else:
                 log.debug(f"Yield msg_data {msg.msg_data}")
                 return msg.msg_data

@@ -8,14 +8,17 @@ from networkx import MultiDiGraph
 from analyser.can_simulator.component import Component
 from analyser.can_simulator.message import Message
 from analyser.config import Config
+from analyser.indexed_set import \
+    IndexedSet
 from utils.logger import logger
 log = logger(__name__)
 
 class CANBus:
-    components: dict[int, Component] = {}
-    buffer: list[Message] = []
-    _initialized: bool = False
+    components: list[Component] = []
+    buffer: IndexedSet = IndexedSet()
+    msg_types_in_buffer: set[int] = set()
     graph = MultiDiGraph()
+    _initialized: bool = False
 
     @classmethod
     def init(cls, path: Path = Path.cwd() / "config.json"):
@@ -34,7 +37,6 @@ class CANBus:
 
             component = Component(
                 name=comp['name'],
-                cid=int(comp['id']),
                 path=Path(components_dir, comp['filename']),
                 is_virtual=virtual
             )
@@ -53,48 +55,48 @@ class CANBus:
 
     @classmethod
     def _register(cls, component: Component):
-        cls.components[component.cid] = component
-        cls.graph.add_node(component.name, component=component)
+        cls.components.append(component)
+        cls.graph.add_node(component.name)
 
     @classmethod
-    def write(cls, msg: Message):
+    def write(cls, produced_msg: Message, consumed_msgs: set[Message]):
         if not cls._initialized:
             log.warning(f"Writing to an uninitialized CAN bus...")
-        try:
-            source_name = cls.components[msg.source].name
-            dest_name = cls.components[msg.dest].name
-        except KeyError as e:
-            log.error(f"Unable to find components for edge ({msg.source} -> {msg.dest}):\n{e}")
-            return
 
-        # Check if we already got an edge with the same information.
-        edge_dict = cls.graph.get_edge_data(source_name, dest_name)
-        if edge_dict:
-            for key, edge in edge_dict.items():
-                if msg.msg_data.equals(edge['msg_data']):
-                    log.warning(f"Found edge ({source_name} -> {dest_name}) with identical constraints")
-                    return
+        target = produced_msg.producer_component_name
+        if not consumed_msgs:
+            if not produced_msg in cls.buffer:
+                if produced_msg.msg_type.is_concrete:
+                    log.info(f"{[target]} produced a new message: {produced_msg}")
+                    cls.buffer.add(produced_msg)
+                    cls.msg_types_in_buffer.add(produced_msg.msg_type.bv.concrete_value)
+            else:
+                log.debug(f"{[target]} produced an already existing message: {produced_msg}")
 
-        if msg.msg_data.is_symbolic():
-            cls.graph.add_edge(
-                source_name,
-                dest_name,
-                type=msg.msg_data.label,
-                bv=str(msg.msg_data.bv),
-                constraints=msg.msg_data.constraints,
-                msg_data=msg.msg_data
-            )
         else:
-            cls.graph.add_edge(
-                source_name,
-                dest_name,
-                type=msg.msg_data.label,
-                bv=str(msg.msg_data.bv),
-                value=msg.msg_data.bv.concrete_value,
-                msg_data=msg.msg_data
-            )
-        log.info(f"Added edge ({source_name} -> {dest_name}) BV: {msg.msg_data.bv}, constraints: {msg.msg_data.constraints}")
-        cls.buffer.append(msg)
+            # Component consumed at least 1 message to produce another
+            for consumed_msg in consumed_msgs:
+                msg_id = cls.buffer.add(produced_msg)
+                source = consumed_msg.producer_component_name
+                edge_dict = cls.graph.get_edge_data(source, target)
+                if edge_dict:
+                    for key, edge in edge_dict.items():
+                        if msg_id == edge['msg_id']:
+                            log.info(f"Message from ({[source]}->{[target]}) is already in the graph")
+                            return
+
+                cls.graph.add_edge(
+                    source,
+                    target,
+                    type=consumed_msg.msg_type_str,
+                    msg_type_bv=str(consumed_msg.msg_type.bv),
+                    msg_type_constraints=str(consumed_msg.msg_type.constraints),
+                    msg_data_bv=str(consumed_msg.msg_data.bv),
+                    msg_data_constraints=str(consumed_msg.msg_data.constraints),
+                    msg_id = msg_id
+                )
+                log.info(f"Added edge between {[source]} -> {[target]}) Message of type {[consumed_msg.msg_type_str]}")
+                cls.buffer.add(consumed_msg)
 
 
     @staticmethod

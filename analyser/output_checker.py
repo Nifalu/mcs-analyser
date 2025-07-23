@@ -57,13 +57,8 @@ class OutputChecker:
             log.error(f"Irregular output format {args} for state {hex(state.addr)}")
             return None
 
-        if  args[0].symbolic:
-            log.critical(f"{self.component} sent a message with symbolic type\n{args[0]}\n")
-
-        log.debug(f"==> Outputs {args[0]} (msg_id) and {args[1]} (msg_data)")
-        msg_id: IOState = IOState.from_state(args[0], state.copy())
+        msg_type: IOState = IOState.from_state(args[0], state.copy())
         msg_data: IOState = IOState.from_state(args[1], state.copy())
-
 
         if msg_data.is_symbolic():
             msg_data.set_label('symbolic' if msg_data.constraints else 'unconstrained')
@@ -73,7 +68,7 @@ class OutputChecker:
         if InputTracker.yield_unconstrained:
             self._extract_subscriptions(state)
 
-        return Message(self.component.cid, msg_id, msg_data)
+        return Message(self.component.name, msg_type, msg_data)
 
 
     def _extract_subscriptions(self, state: angr.SimState):

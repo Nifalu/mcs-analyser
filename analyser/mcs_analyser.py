@@ -25,8 +25,6 @@ class MCSAnalyser:
         self.output_addrs = None
         self.output_checker = None
 
-        self.consumed_messages: set[Message] = set()
-
         self.input_hook_registry: InputHookRegistry = InputHookRegistry()
         self.proj = angr.Project(self.component.path, auto_load_libs=False)
         self.cfg = self.proj.analyses.CFGEmulated()
@@ -84,12 +82,12 @@ class MCSAnalyser:
             result: Message | None = self.output_checker.check(state, self.output_addrs.keys())
             if result is not None:
                 self.component.update_max_expected_inputs(InputTracker.max_inputs_counted)
-                self.consumed_messages.update(InputTracker.get_consumed_messages())
-                if result.msg_id.is_symbolic():
-                    log.warning(f"{self.component.name} produced a symbolic msg_id {result.msg_id}")
+                if result.msg_type.is_symbolic():
+                    log.warning(f"{self.component.name} produced a symbolic msg_id {result.msg_type}")
                 else:
-                    self.component.add_produced_msg_id(result.msg_id.bv.concrete_value)
-            return result
+                    self.component.add_produced_msg_id(result.msg_type.bv.concrete_value)
+
+                CANBus.write(result, InputTracker.get_consumed_messages()) # here we need to write
 
     def _find_addr(self, names: list[str]):
         """
@@ -191,7 +189,7 @@ class MCSAnalyser:
     @staticmethod
     def _flatten_combinations(combination: tuple[Message, ...] | tuple[Message, Message]):
         for c in combination:
-            log.debug(f"Yielding msg_id {c.msg_id}")
-            yield c.msg_id      # Yield destination IOState
+            log.debug(f"Yielding msg_id {c.msg_type}")
+            yield c.msg_type      # Yield destination IOState
             log.debug(f"Yielding msg_data {c.msg_data}")
             yield c.msg_data  # Yield data IOState

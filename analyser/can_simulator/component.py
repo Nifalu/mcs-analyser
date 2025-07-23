@@ -6,12 +6,12 @@ from utils.logger import logger
 log = logger(__name__)
 
 class Component:
-    def __init__(self, name: str, path: Path, cid: int, is_virtual: bool = False):
+    def __init__(self, name: str, path: Path, is_virtual: bool = False):
         self.name = name
         self.path = path
-        self.cid = cid
         self.max_expected_inputs = 0
         self.is_virtual = is_virtual
+        self.is_analysed = False
 
         self.subscriptions: set[int] = set()
         self.produced_msg_ids: set[int] = set()
@@ -36,7 +36,7 @@ class Component:
             self.produced_msg_ids.add(msg_id)
 
     def __repr__(self):
-        return f'Component({self.name}, id: {self.cid}, path: {self.path})'
+        return f'Component({self.name}, path: {self.path})'
 
     def __str__(self):
-        return f'Component({self.name}, id: {self.cid}, path: {self.path})'
+        return f'Component({self.name}, path: {self.path})'

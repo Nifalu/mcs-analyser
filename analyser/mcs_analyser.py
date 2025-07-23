@@ -27,7 +27,7 @@ class MCSAnalyser:
         self.output_checker = None
 
         self.produced_msg_ids: set[IOState] = set()
-        self.consumed_sources: set[int] = set()
+        self.consumed_messages: set[Message] = set()
 
         self.input_hook_registry: InputHookRegistry = InputHookRegistry()
         self.proj = angr.Project(self.component.path, auto_load_libs=False)
@@ -49,6 +49,7 @@ class MCSAnalyser:
                 log.debug(f"Hooked {func_name} at {hex(addr)} with {hook.__class__.__name__}")
 
         if self.component.max_expected_inputs == 0:
+            # Run in unconstrained mode to figure out how many inputs this component needs
             InputTracker.new(self.component.name)
             self._run_analysis(entry_points)
         else:
@@ -85,7 +86,7 @@ class MCSAnalyser:
             result: Message | None = self.output_checker.check(state, self.output_addrs.keys())
             if result is not None:
                 self.component.update_max_expected_inputs(InputTracker.max_inputs_counted)
-                self.consumed_sources.union(InputTracker.get_consumed_sources())
+                self.consumed_messages.union(InputTracker.get_consumed_sources())
                 self.produced_msg_ids.add(result.msg_id)
             return result
 
@@ -193,61 +194,3 @@ class MCSAnalyser:
             yield c.msg_id      # Yield destination IOState
             log.debug(f"Yielding msg_data {c.msg_data}")
             yield c.msg_data  # Yield data IOState
-
-    @staticmethod
-    def extract_symbols(binary_path, prefix="subscriptions", extract_array=True) -> list[int] | dict[int, str]:
-        """
-        Extract symbols from a compiled binary.
-
-        Args:
-            binary_path: Path to the binary file
-            prefix: Symbol prefix to search for (e.g., "subscriptions", "MSG_")
-            extract_array: If True, treat symbol as array and extract all elements.
-                          If False, just extract single value.
-
-        Returns:
-            - If extract_array=True: List of values from the array
-            - If extract_array=False: Dict of {symbol_name: value}
-        """
-        try:
-            proj = angr.Project(binary_path, auto_load_libs=False)
-        except Exception as e:
-            log.error(f"Error loading binary: {e} during symbol extraction")
-            return None if extract_array else {}
-
-        log.debug(f"Loaded binary: {binary_path}")
-
-        results = [] if extract_array else {}
-
-        for symbol in proj.loader.main_object.symbols:
-            if not symbol.name:
-                continue
-
-            # Check if symbol starts with prefix (with or without underscore)
-            clean_name = symbol.name.lstrip('_')
-            if clean_name.startswith(prefix):
-                log.debug(f"Found symbol: {symbol.name} at 0x{symbol.rebased_addr:x}, size: {symbol.size}")
-
-                if hasattr(symbol, 'size') and symbol.size > 0:
-                    if extract_array:
-                        # Extract array elements
-                        num_elements = symbol.size // 8
-                        values = []
-                        for i in range(num_elements):
-                            addr = symbol.rebased_addr + (i * 8)
-                            value = proj.loader.memory.unpack_word(addr, size=8)
-                            values.append(value)
-
-                        return values  # Return first matching array
-                    else:
-                        # Extract single value
-                        value = proj.loader.memory.unpack_word(symbol.rebased_addr, size=8)
-                        if results[value]:
-                            raise(ValueError(f"Multiple Message ID's with the same name detected: {value}"))
-                        results[value] = clean_name
-
-        if extract_array:
-            log.warning(f"No symbols starting with '{prefix}' found in binary")
-            return None
-        else:
-            return results

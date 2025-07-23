@@ -1,18 +1,14 @@
+import re
 import angr
-from abc import abstractmethod
+from abc import \
+    abstractmethod, \
+    ABC
 
-import \
-    claripy
-
-from analyser.config import \
-    Config
-from analyser.input_tracker import \
-    InputTracker
-from analyser.io_state import IOState
+from analyser.input_tracker import InputTracker
 from utils.logger import logger
 log = logger(__name__)
 
-class InputHookBase(angr.SimProcedure):
+class InputHookBase(angr.SimProcedure, ABC):
     """Base class for input function hooks"""
 
     def __init__(self):
@@ -29,17 +25,6 @@ class InputHookBase(angr.SimProcedure):
         """Returns a list of function names this hook can handle"""
         pass
 
-    def get_next_input(self) -> claripy.ast.BV:
-        """Common method to get next input and handle constraints"""
-        next_input = InputTracker.get_next_input()
-        if isinstance(next_input, IOState):
-            if next_input.constraints:
-                self.state.solver.add(*next_input.constraints)
-            return next_input.bv
-        elif isinstance(next_input, int):
-            return claripy.BVV(next_input, Config.default_var_length)
-        raise TypeError(f"Unsupported type {type(next_input)}, expected claripy.BV or int")
-
 
 class ScanfHook(InputHookBase):
     """Hook for scanf-family functions"""
@@ -48,14 +33,30 @@ class ScanfHook(InputHookBase):
     def can_handle(cls) -> list[str]:
         return ['scanf']
 
-    def run(self, fmt, ptr):
-        next_input = self.get_next_input()
+    def run(self, fmt):
 
-        # Store at the pointer location
-        self.state.memory.store(ptr, next_input, endness=self.state.arch.memory_endness)
+        # Figure out how many format string arguments we got
+        fmt_str = self.state.solver.eval(fmt, cast_to=bytes)
+        fmt_str = fmt_str.split(b'\x00')[0].decode('utf-8', errors='ignore')
+        fmt_str = fmt_str.replace('%%', '')
+        num_args = len(re.findall(r'%', fmt_str))
+        num_args += fmt_str.count('*')
 
-        return 1  # scanf returns number of items read
+        if num_args > 2:
+            log.warning(f"scanf() with more than two arguments detected: {fmt_str}")
 
+        if self.state.arch.name != 'AMD64':
+            raise NotImplementedError(f"scanf() is not implemented for {self.state.arch.name} architecture")
+
+        arg_regs = ['rsi', 'rdx', 'rcx', 'r8', 'r9']
+        for i in range(min(num_args, len(arg_regs))):
+            ptr = getattr(self.state.regs, arg_regs[i])
+            next_input = InputTracker.get_next_input()
+            if next_input.constraints:
+                self.state.solver.add(*next_input.constraints)
+                self.state.memory.store(ptr, next_input.bv, endness=self.state.arch.memory_endness)
+
+        return num_args
 
 class InputHookRegistry:
     """Registry to manage input function hooks"""

@@ -44,19 +44,15 @@ class Coordinator:
                 if component.is_virtual:
                     continue
 
-                subscriptions: list[int] = MCSAnalyser.extract_symbols(component.path)
-
-                mcsa = MCSAnalyser(component)
+                mcsa = MCSAnalyser(component) # Runs in unconstrained mode because the Components have expected input = 0
                 mcsa.analyse()
 
-                consumed_sources = mcsa.consumed_sources
+                # msg ID's (integer) this component reads. If the subscription list is empty, the component is probably a leaf
+                subscriptions = component.subscriptions
+                # msg ID's (as IOState) this component produces (the msg id's should be concrete but we allow symbolic to catch those cases.
+                produces = mcsa.produced_msg_ids
 
-                bus.write(component, consumed_msg)
-
-
-
-                MCSAnalyser(component, run_with_unconstrained_inputs=True, count_inputs=True)
-                cls._visualize(bus.graph)
+            cls._analyze_in_dependency_order(bus)
 
             # Color all edges from this unconstrained run in red
             nx.set_edge_attributes(bus.graph, "given unconstrained input", "type")
@@ -74,10 +70,6 @@ class Coordinator:
                     bus.graph.nodes[node]['type'] = 'component'
                     bus.graph.nodes[node]['description'] = 'Component that computes some output(s) given an input(s)'
 
-            # Second iteration: Do the analysis
-            for node in leaf_nodes:
-                component = bus.graph.nodes[node]['component']
-                MCSAnalyser(component, run_with_unconstrained_inputs=True)
 
             analyzed = list(leaf_nodes)
             analyzed.append(0)
@@ -98,6 +90,54 @@ class Coordinator:
             cls._visualize(bus.graph)
 
         print(f"Done! See http://{cls.vc.host}:{cls.vc.port} for results")
+
+    # In analyser/coordinator.py
+    @classmethod
+    def _analyze_in_dependency_order(cls, bus: CANBus):
+        """Analyze components in order based on their dependencies"""
+        analyzed = set()
+        message_buffer = []  # List of available messages
+
+        # Start with sensors (empty subscriptions)
+        for c in bus.components.values():
+            if c.is_virtual or not c.subscriptions:
+                analyzed.add(c)
+
+        log.info(f"\n=== Phase 2: Dependency-based analysis ===")
+        log.info(f"Found {len(analyzed)} sensor components")
+
+        input(" == Works up to here == ")
+
+        # Now analyze components whose dependencies are satisfied
+        while len(analyzed) < len([c for c in bus.components.values() if not c.is_virtual]):
+            made_progress = False
+
+            for component in bus.components.values():
+                if component.is_virtual or component.cid in analyzed:
+                    continue
+
+                # Check if we can analyze this component
+                if cls._can_analyze(component, message_buffer):
+                    log.info(f"\nAnalyzing component: {component.name}")
+
+                    # Get relevant input combinations
+                    input_combinations = cls._get_input_combinations(component, message_buffer)
+
+                    # Analyze with each combination
+                    for combination in input_combinations:
+                        messages = cls._analyze_with_inputs(component, combination)
+                        message_buffer.extend(messages)
+
+                    analyzed.add(component.cid)
+                    made_progress = True
+
+            if not made_progress:
+                # No component can be analyzed - might have circular dependencies
+                remaining = [c.name for c in bus.components.values()
+                            if not c.is_virtual and c.cid not in analyzed]
+                log.warning(f"Cannot analyze remaining components: {remaining}")
+                break
+
 
     @classmethod
     def _visualize(cls, graph):

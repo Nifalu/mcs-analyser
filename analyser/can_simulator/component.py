@@ -8,6 +8,8 @@ class Component:
         self.max_expected_inputs = 0
         self.is_virtual = is_virtual
 
+        self.subscriptions: set[int] = set()
+
     def update_max_expected_inputs(self, number_of_inputs: int):
         if number_of_inputs > self.max_expected_inputs:
             self.max_expected_inputs = number_of_inputs

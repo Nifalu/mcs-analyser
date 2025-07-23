@@ -20,8 +20,10 @@ class IOState:
     def __init__(self,
                  bv: cl_ast.BV,
                  constraints: Iterable[cl_ast.Bool],
-                 label=None
+                 label: str = None,
+                 name: str = None
                  ):
+        self.name = name if name else bv._encoded_name
         self.label = label
         self.bv: cl_ast.BV = bv
         self.constraints: list[cl_ast.Bool] = list(constraints)
@@ -82,6 +84,15 @@ class IOState:
             lo, hi = 0, (1 << self.bv.length) - 1   # fully unconstrained
 
         return lo, hi
+
+    def evaluate_n_values(self, n: int) -> Iterable[int]:
+        solver = clSolver()
+        solver.add(self.constraints)
+
+        if solver.satisfiable():
+            return solver.eval(self.bv, n, exact=True)
+        else:
+            return []
     
     def equals(self, other: "IOState") -> bool:
         """

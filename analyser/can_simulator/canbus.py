@@ -1,12 +1,13 @@
 from json import load
 from pathlib import Path
+
+import \
+    angr
 from networkx import MultiDiGraph
 
 from analyser.can_simulator.component import Component
 from analyser.can_simulator.message import Message
 from analyser.config import Config
-from analyser.mcs_analyser import \
-    MCSAnalyser
 from utils.logger import logger
 log = logger(__name__)
 
@@ -40,7 +41,7 @@ class CANBus:
             cls._register(component)
 
             if not virtual and not symbols:
-                symbols = MCSAnalyser.extract_symbols(component.path, prefix="MSG_", extract_array=False)
+                symbols = cls.extract_msg_id_map(component.path, prefix="MSG_")
 
         Config.init(data['var_length'],
             data['input_hooks'],
@@ -94,6 +95,35 @@ class CANBus:
             )
         log.info(f"Added edge ({source_name} -> {dest_name}) BV: {msg.msg_data.bv}, constraints: {msg.msg_data.constraints}")
         cls.buffer.append(msg)
+
+
+    @staticmethod
+    def extract_msg_id_map(binary_path, prefix) -> dict[int, str]:
+        try:
+            proj = angr.Project(binary_path, auto_load_libs=False)
+        except Exception as e:
+            log.error(f"Error loading binary: {e} during symbol extraction")
+            return {}
+
+        log.debug(f"Loaded binary: {binary_path}")
+
+        results = {}
+
+        for symbol in proj.loader.main_object.symbols:
+            if not symbol.name:
+                continue
+
+            # Check if symbol starts with prefix (with or without underscore)
+            clean_name = symbol.name.lstrip('_')
+            if clean_name.startswith(prefix):
+                log.debug(f"Found symbol: {symbol.name} at 0x{symbol.rebased_addr:x}, size: {symbol.size}")
+
+                if hasattr(symbol, 'size') and symbol.size > 0:
+                    value = proj.loader.memory.unpack_word(symbol.rebased_addr, size=8)
+                    if value in results:
+                        raise(ValueError(f"Multiple Message ID's with the same name detected: {value}"))
+                    results[value] = clean_name
+        return results
 
     @classmethod
     def close(cls):

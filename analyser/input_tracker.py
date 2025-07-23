@@ -1,6 +1,3 @@
-from matplotlib.pyplot import \
-    eventplot
-
 from analyser.can_simulator import Message
 from analyser.io_state import IOState
 from utils.logger import logger
@@ -10,11 +7,13 @@ log = logger(__name__)
 class InputTracker:
     """Tracks consumed inputs during analysis"""
     enumerator = None
-    max_inputs_counted = 0
     yield_unconstrained = False
-    consumed_counter = 0
+
+    max_inputs_counted = 0
+    input_counter = 0
+
     consumed_messages: set[Message] = set()
-    flattened_with_context = []
+    flattened_with_context: list[Message] = []
     component_name = ""
 
 
@@ -25,9 +24,9 @@ class InputTracker:
             cls.max_inputs_counted = 0 # We've got a new component
 
         cls.component_name = component_name
-        cls.consumed_sources.clear()
+        cls.consumed_messages.clear()
         cls.flattened_with_context.clear()
-        cls.consumed_counter = 0
+        cls.input_counter = 0
 
         if input_combination:
             cls.yield_unconstrained = False # We've got input
@@ -45,16 +44,16 @@ class InputTracker:
         Reset tracking values to prepare for a new analysis of the same component.
         """
         cls.enumerator = enumerate(cls.flattened_with_context)
-        cls.consumed_counter = 0
+        cls.input_counter = 0
         cls.consumed_messages.clear()
 
     @classmethod
-    def get_next_input(cls) -> IOState | int:
+    def get_next_input(cls) -> IOState:
         """Get the next input and track it"""
-        cls.consumed_counter += 1
-        cls.max_inputs_counted = max(cls.max_inputs_counted, cls.consumed_counter)
+        cls.input_counter += 1
+        cls.max_inputs_counted = max(cls.max_inputs_counted, cls.input_counter)
         if cls.yield_unconstrained:
-            return IOState.unconstrained(f"{cls.component_name}_input_{cls.consumed_counter}")
+            return IOState.unconstrained(f"{cls.component_name}_input_{cls.input_counter}")
         try:
             idx, msg = next(cls.enumerator)
             if idx % 2 == 0:
@@ -65,10 +64,9 @@ class InputTracker:
         except StopIteration:
             # This should actually never happen as the number of combinations is calculated based
             # the number of unconstrained inputs consumed by this component in an earlier phase.
-            log.error("Requested more inputs than available... => Creating unconstrained input")
-            return IOState.unconstrained(f"{cls.component_name}_input_{cls.consumed_counter}")
+            raise StopIteration(f"{cls.component_name} requested more inputs than available...")
 
     @classmethod
-    def get_consumed_sources(cls) -> set[Message]:
+    def get_consumed_messages(cls) -> set[Message]:
         return cls.consumed_messages.copy()
 

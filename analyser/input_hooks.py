@@ -33,14 +33,20 @@ class ScanfHook(InputHookBase):
     def can_handle(cls) -> list[str]:
         return ['scanf']
 
-    def run(self, fmt):
+    def run(self, fmt_str_ptr):
 
+        log.debug("Input hook triggered")
         # Figure out how many format string arguments we got
-        fmt_str = self.state.solver.eval(fmt, cast_to=bytes)
+        fmt_str = self.state.solver.eval(
+            self.state.memory.load(fmt_str_ptr, 1024),
+            cast_to=bytes,
+        )
         fmt_str = fmt_str.split(b'\x00')[0].decode('utf-8', errors='ignore')
         fmt_str = fmt_str.replace('%%', '')
         num_args = len(re.findall(r'%', fmt_str))
         num_args += fmt_str.count('*')
+
+        log.debug(f"Calculated {num_args} arguments from {fmt_str}")
 
         if num_args > 2:
             log.warning(f"scanf() with more than two arguments detected: {fmt_str}")
@@ -56,7 +62,7 @@ class ScanfHook(InputHookBase):
                 self.state.solver.add(*next_input.constraints)
                 self.state.memory.store(ptr, next_input.bv, endness=self.state.arch.memory_endness)
 
-        return num_args
+        return
 
 class InputHookRegistry:
     """Registry to manage input function hooks"""

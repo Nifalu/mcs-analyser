@@ -23,7 +23,6 @@ class IOState:
                  label: str = None,
                  name: str = None
                  ):
-        self.name = name if name else bv._encoded_name
         self.label = label
         self.bv: cl_ast.BV = bv
         self.constraints: list[cl_ast.Bool] = list(constraints)

@@ -14,6 +14,7 @@ class InputTracker:
 
     consumed_messages: set[Message] = set()
     flattened_with_context: list[Message] = []
+    input_mem_addresses: list[int] = []
     component_name = ""
 
 
@@ -26,6 +27,8 @@ class InputTracker:
         cls.component_name = component_name
         cls.consumed_messages.clear()
         cls.flattened_with_context.clear()
+        cls.input_mem_addresses.clear()
+
         cls.input_counter = 0
 
         if input_combination:
@@ -46,6 +49,7 @@ class InputTracker:
         cls.enumerator = enumerate(cls.flattened_with_context)
         cls.input_counter = 0
         cls.consumed_messages.clear()
+        cls.input_mem_addresses.clear()
 
     @classmethod
     def get_next_input(cls) -> IOState:
@@ -53,13 +57,17 @@ class InputTracker:
         cls.input_counter += 1
         cls.max_inputs_counted = max(cls.max_inputs_counted, cls.input_counter)
         if cls.yield_unconstrained:
-            return IOState.unconstrained(f"{cls.component_name}_input_{cls.input_counter}")
+            log.debug(f"Yield unconstrained {cls.component_name}_input_{cls.input_counter}")
+            next_input = IOState.unconstrained(f"{cls.component_name}_input_{cls.input_counter}")
+            return next_input
         try:
             idx, msg = next(cls.enumerator)
             if idx % 2 == 0:
                 cls.consumed_messages.add(msg)
+                log.debug(f"Yield msg_id {msg.msg_id}")
                 return msg.msg_id
             else:
+                log.debug(f"Yield msg_data {msg.msg_data}")
                 return msg.msg_data
         except StopIteration:
             # This should actually never happen as the number of combinations is calculated based

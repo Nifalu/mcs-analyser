@@ -1,6 +1,8 @@
 import networkx as nx
 from schnauzer import VisualizationClient
 from analyser.can_simulator import CANBus
+from analyser.config import \
+    Config
 from analyser.mcs_analyser import MCSAnalyser
 from pathlib import Path
 from utils.logger import logger
@@ -47,10 +49,17 @@ class Coordinator:
                 mcsa = MCSAnalyser(component) # Runs in unconstrained mode because the Components have expected input = 0
                 mcsa.analyse()
 
-                # msg ID's (integer) this component reads. If the subscription list is empty, the component is probably a leaf
-                subscriptions = component.subscriptions
-                # msg ID's (as IOState) this component produces (the msg id's should be concrete but we allow symbolic to catch those cases.
-                produces = mcsa.produced_msg_ids
+                subscriptions = []
+                for msg_id in component.subscriptions:
+                    subscriptions.append(Config.message_name_lookup[msg_id])
+
+                #subscriptions = [Config.message_name_lookup[msg_id] for msg_id in component.subscriptions]
+                log.error(f"{component} subscribes to {subscriptions} | {component.subscriptions}")
+
+                #produced = [Config.message_name_lookup[msg_idx] for msg_idx in mcsa.produced_msg_ids]
+                #log.error(f"{component} produced {produced}")
+
+                input(" == Works up to here == ")
 
             cls._analyze_in_dependency_order(bus)
 
@@ -106,8 +115,6 @@ class Coordinator:
         log.info(f"\n=== Phase 2: Dependency-based analysis ===")
         log.info(f"Found {len(analyzed)} sensor components")
 
-        input(" == Works up to here == ")
-
         # Now analyze components whose dependencies are satisfied
         while len(analyzed) < len([c for c in bus.components.values() if not c.is_virtual]):
             made_progress = False
@@ -148,4 +155,3 @@ class Coordinator:
             edge_labels=cls.edge_labels,
             type_color_map=cls.type_color_map
         )
-        input()

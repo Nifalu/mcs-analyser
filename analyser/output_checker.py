@@ -2,6 +2,8 @@ import angr
 import logging
 import re
 
+import claripy
+
 from analyser.input_tracker import InputTracker
 from analyser.can_simulator import Component, Message
 from analyser.output_parser import OutputParserRegistry, OutputFunctionParser
@@ -65,18 +67,15 @@ class OutputChecker:
         else:
             msg_data.set_label('concrete')
 
-        self._extract_subscriptions(state)
+        if InputTracker.yield_unconstrained:
+            self._extract_subscriptions(state)
 
         return Message(self.component.cid, msg_id, msg_data)
 
 
     def _extract_subscriptions(self, state: angr.SimState):
-
         number_of_inputs = InputTracker.input_counter
 
-        # Reached output with just a single input.
-        # This must be a Sensor / Producer that does not read from the bus.
-        # Or this sensor has some issues...
         if number_of_inputs == 0:
             log.warning(f"Reached output with no input in {self.component.name}. Did we miss an input function type?")
             return
@@ -85,28 +84,69 @@ class OutputChecker:
             log.debug(f"Reached output with just a single input in {self.component.name}. Is it an external sensor?")
             return
 
+        #Debug state info
+        log.error(f"State has {len(state.solver.constraints)} constraints")
+        log.error(f"All variables in state: {state.solver.all_variables}")
+
+        # Let's look at the constraints to find our variables
+        all_constraint_vars = set()
+        for constraint in state.solver.constraints:
+            all_constraint_vars.update(constraint.variables)
+        log.error(f"All variables in constraints: {all_constraint_vars}")
+
+        # Look at every second input (msg_ids)
         for i in range(0, number_of_inputs, 2):
-            if i >= len(InputTracker.flattened_with_context):
-                log.warning(f"Component {self.component.name} reached output with uneven number of inputs...")
-                break
+            # The variable name we're looking for
+            var_name = f"{self.component.name}_input_{i+1}"
 
-            msg = InputTracker.flattened_with_context[i]
-            msg_id = msg.msg_id
+            log.debug(f"Looking for constraints on variable: {var_name}")
 
-            input_var_name = msg_id.name
+            # Find all variables in the state with this name
+            found_var = None
+            for var in state.solver.all_variables:
+                if var.startswith(var_name):  # startswith because angr might append suffixes
+                    found_var = var
+                    break
 
-            for constraint in state.solver.constraints:
-                constraint_str = str(constraint)
+            if not found_var:
+                log.warning(f"Could not find variable {var_name} in state")
+                continue
 
-                if input_var_name in constraint_str and '==' in constraint_str:
-                    matches = re.findall(r'== (?:0x)?([0-9a-fA-F]+)(?:\s|>|$)', constraint_str)
-                    for match in matches:
-                        try:
-                            value = int(match, 16)
-                            self.component.subscriptions.add(value)
-                            log.info(f"Component appears to read msg_id {value}")
-                        except ValueError:
-                            pass
+            # Create a BV with this variable name to evaluate
+            msg_id_bv = claripy.BVS(found_var, Config.default_var_length)
+
+            try:
+                if state.solver.unique(msg_id_bv):
+                    value = state.solver.eval(msg_id_bv, cast_to=int)
+                    self.component.subscriptions.add(value)
+                    log.info(f"Component subscribes to msg_id {value}")
+                else:
+                    possible_values = state.solver.eval_upto(msg_id_bv, 20, cast_to=int)
+                    if len(possible_values) < 20:
+                        self.component.subscriptions.update(possible_values)
+                        log.info(f"Component subscribes to msg_ids {possible_values}")
+                    else:
+                        log.warning(f"{var_name} appears unconstrained")
+            except Exception as e:
+                log.error(f"Exception while evaluating {var_name}: {e}")
+
+
+                """
+                input_var_name = msg_id.name
+
+                for constraint in state.solver.constraints:
+                    constraint_str = str(constraint)
+
+                    if input_var_name in constraint_str and '==' in constraint_str:
+                        matches = re.findall(r'== (?:0x)?([0-9a-fA-F]+)(?:\s|>|$)', constraint_str)
+                        for match in matches:
+                            try:
+                                value = int(match, 16)
+                                self.component.subscriptions.add(value)
+                                log.info(f"Component appears to read msg_id {value}")
+                            except ValueError:
+                                pass
+                                """
 
 
 def setup_output_checker(component: Component, output_addrs) -> OutputChecker:

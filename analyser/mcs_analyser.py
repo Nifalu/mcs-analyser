@@ -10,9 +10,10 @@ from analyser.config import Config
 from analyser.input_hooks import InputHookRegistry
 from analyser.input_tracker import \
     InputTracker
+from analyser.io_state import \
+    IOState
 from analyser.output_checker import setup_output_checker
 from analyser.can_simulator import Component, Message, CANBus
-from analyser.io_state import IOState
 from utils.logger import logger
 log = logger(__name__)
 
@@ -26,7 +27,7 @@ class MCSAnalyser:
         self.output_addrs = None
         self.output_checker = None
 
-        self.produced_msg_ids: set[IOState] = set()
+        self.produced_msg_ids: set[int] = set()
         self.consumed_messages: set[Message] = set()
 
         self.input_hook_registry: InputHookRegistry = InputHookRegistry()
@@ -86,8 +87,11 @@ class MCSAnalyser:
             result: Message | None = self.output_checker.check(state, self.output_addrs.keys())
             if result is not None:
                 self.component.update_max_expected_inputs(InputTracker.max_inputs_counted)
-                self.consumed_messages.union(InputTracker.get_consumed_sources())
-                self.produced_msg_ids.add(result.msg_id)
+                self.consumed_messages.update(InputTracker.get_consumed_messages())
+                if result.msg_id.is_symbolic():
+                    log.warning(f"{self.component.name} produced a symbolic msg_id {result.msg_id}")
+                else:
+                    self.produced_msg_ids.add(result.msg_id.bv.concrete_value)
             return result
 
     def _find_addr(self, names: list[str]):

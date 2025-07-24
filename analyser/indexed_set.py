@@ -40,6 +40,10 @@ class IndexedSet(Generic[T]):
         """Iterate over items"""
         return iter(self._items.values())
 
+    def values(self) -> Iterator[T]:
+        """Iterate over items"""
+        return iter(self._items.values())
+
     def items(self) -> Iterator[tuple[int, T]]:
         """Iterate over (id, item) pairs"""
         return iter(self._items.items())

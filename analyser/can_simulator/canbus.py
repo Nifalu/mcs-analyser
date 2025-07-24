@@ -1,8 +1,7 @@
 from json import load
 from pathlib import Path
 
-import \
-    angr
+import angr
 from networkx import MultiDiGraph
 
 from analyser.can_simulator.component import Component
@@ -14,9 +13,9 @@ from utils.logger import logger
 log = logger(__name__)
 
 class CANBus:
-    components: list[Component] = []
-    buffer: IndexedSet = IndexedSet()
-    msg_types_in_buffer: set[int] = set()
+    components: IndexedSet[Component] = IndexedSet()
+    buffer: IndexedSet[Message] = IndexedSet()
+    msg_types_in_buffer: dict[int, int] = dict() # count which and how many msg_types we have
     graph = MultiDiGraph()
     _initialized: bool = False
 
@@ -55,8 +54,27 @@ class CANBus:
 
     @classmethod
     def _register(cls, component: Component):
-        cls.components.append(component)
-        cls.graph.add_node(component.name)
+        cid = cls.components.add(component)
+        cls.graph.add_node(component.name, cid=cid)
+
+    @classmethod
+    def _add_to_buffer(cls, msg: Message) -> bool:
+        if msg.msg_type.is_symbolic():
+            log.warning(f"{[msg.producer_component_name]} produced a msg with symbolic type: {msg}")
+            return False
+
+        if msg in cls.buffer:
+            log.debug(f"{[msg]} already in buffer")
+            return False
+
+        cls.buffer.add(msg)
+        msg_type = msg.msg_type.bv.concrete_value
+        if msg_type in cls.msg_types_in_buffer:
+            cls.msg_types_in_buffer[msg_type] += 1
+        else:
+            cls.msg_types_in_buffer[msg_type] = 1
+        log.info(f"{[msg.producer_component_name]} produced a new message: {msg}")
+        return True
 
     @classmethod
     def write(cls, produced_msg: Message, consumed_msgs: set[Message]):
@@ -64,14 +82,21 @@ class CANBus:
             log.warning(f"Writing to an uninitialized CAN bus...")
 
         target = produced_msg.producer_component_name
-        if not consumed_msgs:
-            if not produced_msg in cls.buffer:
-                if produced_msg.msg_type.is_concrete:
-                    log.info(f"{[target]} produced a new message: {produced_msg}")
-                    cls.buffer.add(produced_msg)
-                    cls.msg_types_in_buffer.add(produced_msg.msg_type.bv.concrete_value)
-            else:
-                log.debug(f"{[target]} produced an already existing message: {produced_msg}")
+        produced_msg_type = None
+        if produced_msg.msg_type.is_symbolic():
+            produced_msg_type = produced_msg.msg_type.bv.concrete_value
+
+        success = cls._add_to_buffer(produced_msg)
+
+        if not success or not consumed_msgs:
+            # if we did not consume any input we can't draw an edge (leaf component)
+            # if we did not add the msg to the buffer we also don't have to draw an edge
+            return
+
+        for component in cls.components:
+            if produced_msg_type in component.subscriptions:
+                log.info(f"Reopening [{target}] to handle a new message: {produced_msg}")
+                component.is_analysed = False # reopen this component as we got a new message for it.
 
         else:
             # Component consumed at least 1 message to produce another
@@ -95,9 +120,8 @@ class CANBus:
                     msg_data_constraints=str(consumed_msg.msg_data.constraints),
                     msg_id = msg_id
                 )
-                log.info(f"Added edge between {[source]} -> {[target]}) Message of type {[consumed_msg.msg_type_str]}")
+                log.info(f"Added edge between {[source]} -> {[target]} with message of type {[consumed_msg.msg_type_str]}")
                 cls.buffer.add(consumed_msg)
-
 
     @staticmethod
     def extract_msg_id_map(binary_path, prefix) -> dict[int, str]:
@@ -128,15 +152,27 @@ class CANBus:
 
     @classmethod
     def close(cls):
-        cls.components = {}
-        cls.buffer = []
+        cls.components.clear()
+        cls.buffer.clear()
+        cls.msg_types_in_buffer.clear()
         cls.graph.clear()
         cls.config = Config()
         cls._initialized = False
 
     @classmethod
-    def read_all(cls) -> list[Message]:
-        return cls.buffer
+    def read_all_msgs_of_types(cls, types: set[int]) -> set[Message]:
+        result_set = set()
+        for msg in cls.buffer:
+            if msg.msg_type.bv.concrete_value in types:
+                result_set.add(msg)
+        return result_set
+
+    @classmethod
+    def number_of_msgs_of_types(cls, types: set[int]) -> int:
+        total = 0
+        for t in types:
+            total += cls.msg_types_in_buffer.get(t, 0)
+        return total
 
     @classmethod
     def display(cls):

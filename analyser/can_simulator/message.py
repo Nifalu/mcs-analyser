@@ -26,9 +26,9 @@ class Message:
                 self.msg_data == other.msg_data)
 
     def __repr__(self):
-        return f"{[self.msg_type_str]} Message"
+        return f"{[self.msg_type_str]}"
 
     def __str__(self):
-        return f"{[self.msg_type_str]} Message"
+        return f"{[self.msg_type_str]}"
 
 

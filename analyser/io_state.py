@@ -21,7 +21,6 @@ class IOState:
                  bv: cl_ast.BV,
                  constraints: Iterable[cl_ast.Bool],
                  label: str = None,
-                 name: str = None
                  ):
         self.label = label
         self.bv: cl_ast.BV = bv

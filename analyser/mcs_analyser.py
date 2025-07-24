@@ -138,8 +138,7 @@ class MCSAnalyser:
             log.debug(f"Found {len(simgr.found)} SimStates for {[hex(x) for x in addrs]}")
             return simgr.found
 
-    @staticmethod
-    def _generate_input_combinations(allow_repetition=False, length=None, warn_threshold=100):
+    def _generate_input_combinations(self, allow_repetition=False, length=None, warn_threshold=100):
         """
         Lazily generates all possible permutations of the inputs.
 
@@ -155,7 +154,8 @@ class MCSAnalyser:
             ValueError: If length > len(inputs) and allow_repetition=False
         """
         log.debug("Generating permutations with:")
-        inputs = CANBus.read_all()
+        inputs = CANBus.read_all_msgs_of_types(self.component.subscriptions)
+
         for msg in inputs:
             log.debug(f"  {msg}")
 

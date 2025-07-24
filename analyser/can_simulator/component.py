@@ -26,17 +26,17 @@ class Component:
     def add_subscription(self, subscription):
         if subscription not in self.subscriptions:
             subscription_str = Config.message_name_lookup.get(subscription, str(subscription))
-            log.info(f"{self} does read {[subscription_str]} (0x{subscription:x}) messages")
+            log.info(f"{self} can read messages of type {[subscription_str]} (0x{subscription:x})")
             self.subscriptions.add(subscription)
 
     def add_produced_msg_id(self, msg_id):
         if msg_id not in self.produced_msg_ids:
             produced_msg_type_str = Config.message_name_lookup.get(msg_id, str(msg_id))
-            log.info(f"{self} produces {[produced_msg_type_str]} (0x{msg_id:x}) messages")
+            log.info(f"{self} can produce messages of type {[produced_msg_type_str]} (0x{msg_id:x}) messages")
             self.produced_msg_ids.add(msg_id)
 
     def __repr__(self):
-        return f'Component({self.name}, path: {self.path})'
+        return f'{[self.name]}'
 
     def __str__(self):
-        return f'Component({self.name}, path: {self.path})'
+        return f'{[self.name]}'

@@ -100,8 +100,8 @@ class IOState:
         use different bitvector variables or have different lengths (if one is derived
         from the other through operations like extraction, extension, etc.).
         """
-        log.debug(f"Comparing {self.bv} and {other.bv}")
-        log.debug(f"with constraints:\n {self.constraints}\n {other.constraints}")
+        #log.debug(f"Comparing {self.bv} and {other.bv}")
+        #log.debug(f"with constraints:\n {self.constraints}\n {other.constraints}")
 
         # if both are concrete and have the same value, they are equal
         if self.is_concrete() and other.is_concrete():
@@ -145,24 +145,6 @@ class IOState:
             return False
 
         return True
-
-
-
-    def pretty(self, max_len: int = 96) -> str:
-        if self.is_concrete():
-            line = f"IOState <{self.bv}> is concrete: {hex(self.bv.args[0])} ({self.bv.length}-bit)"
-            return line
-
-        lines = [f"OutputCapsule <{self.bv}> ({self.bv.length}‑bit)"]
-        lo, hi = self.range()
-        lines.append(f"  range = [{hex(lo)}, {hex(hi)}]")
-        lines.append("  slice:")
-        for c in self.constraints:
-            txt = str(c)
-            if len(txt) > max_len:
-                txt = txt[:max_len] + "…"
-            lines.append("    " + txt)
-        return "\n".join(lines)
 
     def __repr__(self) -> str:
         return f"<IOState name={self.bv!r} bits={self.bv.length} constraint_length={len(self.constraints)}>"

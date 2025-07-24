@@ -10,7 +10,9 @@ from analyser.config import Config
 from analyser.input_hooks import InputHookRegistry
 from analyser.input_tracker import \
     InputTracker
-from analyser.output_checker import setup_output_checker
+from analyser.output_checker import \
+    setup_output_checker, \
+    OutputChecker
 from analyser.can_simulator import Component, Message, CANBus
 from utils.logger import logger
 log = logger(__name__)
@@ -24,6 +26,8 @@ class MCSAnalyser:
 
         self.output_addrs = None
         self.output_checker = None
+
+        self.current_input_combinations = None
 
         self.input_hook_registry: InputHookRegistry = InputHookRegistry()
         self.proj = angr.Project(self.component.path, auto_load_libs=False)
@@ -49,8 +53,8 @@ class MCSAnalyser:
             InputTracker.new(self.component.name)
             self._run_analysis(entry_points)
         else:
-            input_combinations = self._generate_input_combinations(length=self.component.max_expected_inputs)
-            for i, combination in enumerate(input_combinations):
+            self.current_input_combinations = self._generate_input_combinations(length=self.component.max_expected_inputs)
+            for i, combination in enumerate(self.current_input_combinations):
                 InputTracker.new(self.component.name, combination)
                 self._run_analysis(entry_points)
 
@@ -68,15 +72,28 @@ class MCSAnalyser:
             )
             simgr: SimulationManager = self.proj.factory.simgr(entry_point_copy)
 
-            log.debug(f"Finding all solutions from {entry_point_copy.addr:#x}")
+            if self.output_addrs:
+                log.debug(f"Finding all solutions from {entry_point_copy.addr:#x}")
+                simgr.explore(
+                    find=list(self.output_addrs.keys()),
+                    cfg=self.cfg,
+                    num_find=NUM_FIND,
+                )
+                log.debug(f"Found {len(simgr.found)} solutions")
+            else:
+                log.error(f"About to simulate. Expecting maximum of {InputTracker.max_inputs_counted} inputs")
+                latest_state = None
+                step_count = 0
+                max_steps = 10000
 
-            simgr.explore(
-                find=list(self.output_addrs.keys()),
-                cfg=self.cfg,
-                num_find=NUM_FIND,
-            )
+                while simgr.active and step_count < max_steps:
+                    latest_state = simgr.active[0]
+                    simgr.step()
+                    step_count += 1
+                log.error(f"stepped {step_count} steps and read {InputTracker.input_counter} inputs, max_expected_inputs={InputTracker.max_inputs_counted}")
 
-            log.debug(f"Found {len(simgr.found)} solutions")
+                OutputChecker.extract_subscriptions(self.component, latest_state)
+                CANBus.write(None, InputTracker.get_consumed_messages(), self.component.name)
 
     def _capture_output(self, state: SimState):
             result: Message | None = self.output_checker.check(state, self.output_addrs.keys())

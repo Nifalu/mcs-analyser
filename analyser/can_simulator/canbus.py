@@ -77,51 +77,57 @@ class CANBus:
         return True
 
     @classmethod
-    def write(cls, produced_msg: Message, consumed_msgs: set[Message]):
+    def write(cls, produced_msg: Message = None, consumed_msgs: set[Message] = None, producer_name: str = None):
         if not cls._initialized:
-            log.warning(f"Writing to an uninitialized CAN bus...")
-
-        target = produced_msg.producer_component_name
-        produced_msg_type = None
-        if produced_msg.msg_type.is_symbolic():
-            produced_msg_type = produced_msg.msg_type.bv.concrete_value
-
-        success = cls._add_to_buffer(produced_msg)
-
-        if not success or not consumed_msgs:
-            # if we did not consume any input we can't draw an edge (leaf component)
-            # if we did not add the msg to the buffer we also don't have to draw an edge
+            log.error(f"Writing to an uninitialized CAN bus...")
             return
 
-        for component in cls.components:
-            if produced_msg_type in component.subscriptions:
-                log.info(f"Reopening [{target}] to handle a new message: {produced_msg}")
-                component.is_analysed = False # reopen this component as we got a new message for it.
+        if not produced_msg and not producer_name:
+            log.error(f"Got a message with no sender name")
+            return
 
-        else:
-            # Component consumed at least 1 message to produce another
-            for consumed_msg in consumed_msgs:
-                msg_id = cls.buffer.add(produced_msg)
-                source = consumed_msg.producer_component_name
-                edge_dict = cls.graph.get_edge_data(source, target)
-                if edge_dict:
-                    for key, edge in edge_dict.items():
-                        if msg_id == edge['msg_id']:
-                            log.info(f"Message from ({[source]}->{[target]}) is already in the graph")
-                            return
+        target = producer_name or produced_msg.producer_component_name
 
-                cls.graph.add_edge(
-                    source,
-                    target,
-                    type=consumed_msg.msg_type_str,
-                    msg_type_bv=str(consumed_msg.msg_type.bv),
-                    msg_type_constraints=str(consumed_msg.msg_type.constraints),
-                    msg_data_bv=str(consumed_msg.msg_data.bv),
-                    msg_data_constraints=str(consumed_msg.msg_data.constraints),
-                    msg_id = msg_id
-                )
-                log.info(f"Added edge between {[source]} -> {[target]} with message of type {[consumed_msg.msg_type_str]}")
-                cls.buffer.add(consumed_msg)
+        if produced_msg:
+            produced_msg_type = None
+            if produced_msg.msg_type.is_symbolic():
+                produced_msg_type = produced_msg.msg_type.bv.concrete_value
+
+            success = cls._add_to_buffer(produced_msg)
+
+            if not success or not consumed_msgs:
+                # if we did not consume any input we can't draw an edge (leaf component)
+                # if we did not add the msg to the buffer we also don't have to draw an edge
+                return
+
+            for component in cls.components:
+                if produced_msg_type in component.subscriptions:
+                    log.info(f"Reopening [{target}] to handle a new message: {produced_msg}")
+                    component.is_analysed = False # reopen this component as we got a new message for it.
+
+        # Component consumed at least 1 message to produce another
+        for consumed_msg in consumed_msgs:
+            msg_id = cls.buffer.add(produced_msg)
+            source = consumed_msg.producer_component_name
+            edge_dict = cls.graph.get_edge_data(source, target)
+            if edge_dict:
+                for key, edge in edge_dict.items():
+                    if msg_id == edge['msg_id']:
+                        log.info(f"Message from ({[source]}->{[target]}) is already in the graph")
+                        return
+
+            cls.graph.add_edge(
+                source,
+                target,
+                type=consumed_msg.msg_type_str,
+                msg_type_bv=str(consumed_msg.msg_type.bv),
+                msg_type_constraints=str(consumed_msg.msg_type.constraints),
+                msg_data_bv=str(consumed_msg.msg_data.bv),
+                msg_data_constraints=str(consumed_msg.msg_data.constraints),
+                msg_id = msg_id
+            )
+            log.info(f"Added edge between {[source]} -> {[target]} with message of type {[consumed_msg.msg_type_str]}")
+            cls.buffer.add(consumed_msg)
 
     @staticmethod
     def extract_msg_id_map(binary_path, prefix) -> dict[int, str]:

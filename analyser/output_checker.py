@@ -2,10 +2,6 @@ import angr
 import logging
 import re
 
-import claripy
-
-from analyser.config import \
-    Config
 from analyser.input_tracker import InputTracker
 from analyser.can_simulator import Component, Message
 from analyser.output_parser import OutputParserRegistry, OutputFunctionParser
@@ -66,26 +62,27 @@ class OutputChecker:
             msg_data.set_label('concrete')
 
         if InputTracker.yield_unconstrained:
-            self._extract_subscriptions(state)
+            self.extract_subscriptions(self.component, state)
 
         return Message(self.component.name, msg_type, msg_data)
 
-
-    def _extract_subscriptions(self, state: angr.SimState):
+    @staticmethod
+    def extract_subscriptions(component: Component, state: angr.SimState):
         number_of_inputs = InputTracker.input_counter
 
         if number_of_inputs == 0:
-            log.warning(f"Reached output with no input in {self.component.name}. Did we miss an input function type?")
+            log.warning(f"Reached output with no input in {component}. Did we miss an input function type?")
             return
 
         if number_of_inputs == 1:
-            log.debug(f"Reached output with just a single input in {self.component.name}. Is it an external sensor?")
+            log.debug(f"Reached output with just a single input in {component}. Is it an external sensor?")
             return
 
         # Look at constraints to find msg_id values (every second input)
         for i in range(0, number_of_inputs, 2):
-            var_name = f"{self.component.name}_input_{i+1}"
+            var_name = f"{component.name}_input_{i+1}"
             log.debug(f"Looking for constraints on variable: {var_name}")
+            log.debug(f"Found {state.solver.constraints}")
 
             for constraint in state.solver.constraints:
                 constraint_str = str(constraint)
@@ -102,7 +99,7 @@ class OutputChecker:
                             else:
                                 value = int(match, 10)
 
-                            self.component.add_subscription(value)
+                            component.add_subscription(value)
 
                         except ValueError as e:
                             log.error(f"Failed to parse value from {match}: {e}")
@@ -116,7 +113,7 @@ class OutputChecker:
                             else:
                                 value = int(match, 10)
 
-                            self.component.add_subscription(value)
+                            component.add_subscription(value)
 
                         except ValueError as e:
                             log.error(f"Failed to parse value from {match}: {e}")

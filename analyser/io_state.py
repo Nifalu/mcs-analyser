@@ -105,7 +105,7 @@ class IOState:
 
         # if both are concrete and have the same value, they are equal
         if self.is_concrete() and other.is_concrete():
-            return self.bv.concrete == other.bv.concrete_value
+            return self.bv.concrete_value == other.bv.concrete_value
 
         # If just one is concrete, they can't be equal
         if self.is_concrete() != other.is_concrete():

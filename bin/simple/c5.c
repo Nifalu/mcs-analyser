@@ -1,4 +1,4 @@
-// dashboard.c
+// warning light
 #include <stdio.h>
 #include <stdint.h>
 #include "can_messages.h"
@@ -11,11 +11,10 @@ int main() {
     scanf("%lu%lu", &rx_msg_id, &rx_msg_data);
 
     // Only process engine health messages
-    if (rx_msg_id == MSG_ENGINE_HEALTH) {
-        // Display warning if health is low
-        if (rx_msg_data < 50) {
-            printf("%lu%lu\n", MSG_WARNING_LIGHT, 1);  // Turn on warning
-        }
+    if (rx_msg_id == MSG_WARNING_LIGHT) {
+
+        // Control electronics
+        uint64_t turn_on_the_warning_light = rx_msg_data;
     }
 
     return 0;

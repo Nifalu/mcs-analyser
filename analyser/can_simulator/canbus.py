@@ -73,7 +73,7 @@ class CANBus:
             cls.msg_types_in_buffer[msg_type] += 1
         else:
             cls.msg_types_in_buffer[msg_type] = 1
-        log.info(f"{[msg.producer_component_name]} produced a new message: {msg}")
+        log.critical(f"{[msg.producer_component_name]} produced a new message: {msg}")
         return True
 
     @classmethod
@@ -95,26 +95,31 @@ class CANBus:
 
             success = cls._add_to_buffer(produced_msg)
 
-            if not success or not consumed_msgs:
-                # if we did not consume any input we can't draw an edge (leaf component)
-                # if we did not add the msg to the buffer we also don't have to draw an edge
-                return
-
-            for component in cls.components:
-                if produced_msg_type in component.subscriptions:
-                    log.info(f"Reopening [{target}] to handle a new message: {produced_msg}")
-                    component.is_analysed = False # reopen this component as we got a new message for it.
+            if success:
+                for component in cls.components:
+                    if produced_msg_type in component.subscriptions:
+                        log.info(f"Reopening [{target}] to handle a new message: {produced_msg}")
+                        component.is_analysed = False # reopen this component as we got a new message for it.
 
         # Component consumed at least 1 message to produce another
+
         for consumed_msg in consumed_msgs:
-            msg_id = cls.buffer.add(produced_msg)
+            continue_outer = False
+            log.critical(f"Checking if we add msg to graph")
+            log.debug(f"Messages: {consumed_msgs}")
+            msg_id = cls.buffer.get_id(consumed_msg)
+            if msg_id is None:
+                log.critical("MSG_ID IS NONE")
             source = consumed_msg.producer_component_name
             edge_dict = cls.graph.get_edge_data(source, target)
             if edge_dict:
                 for key, edge in edge_dict.items():
                     if msg_id == edge['msg_id']:
                         log.info(f"Message from ({[source]}->{[target]}) is already in the graph")
-                        return
+                        continue_outer = True
+                        break
+            if continue_outer:
+                continue
 
             cls.graph.add_edge(
                 source,
@@ -127,7 +132,6 @@ class CANBus:
                 msg_id = msg_id
             )
             log.info(f"Added edge between {[source]} -> {[target]} with message of type {[consumed_msg.msg_type_str]}")
-            cls.buffer.add(consumed_msg)
 
     @staticmethod
     def extract_msg_id_map(binary_path, prefix) -> dict[int, str]:

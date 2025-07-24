@@ -81,7 +81,6 @@ class MCSAnalyser:
                 )
                 log.debug(f"Found {len(simgr.found)} solutions")
             else:
-                log.error(f"About to simulate. Expecting maximum of {InputTracker.max_inputs_counted} inputs")
                 latest_state = None
                 step_count = 0
                 max_steps = 10000
@@ -90,9 +89,11 @@ class MCSAnalyser:
                     latest_state = simgr.active[0]
                     simgr.step()
                     step_count += 1
-                log.error(f"stepped {step_count} steps and read {InputTracker.input_counter} inputs, max_expected_inputs={InputTracker.max_inputs_counted}")
+                log.error(f"stepped {step_count} steps and read {InputTracker.input_counter} inputs but consumed {InputTracker.consumed_messages} messages")
 
-                OutputChecker.extract_subscriptions(self.component, latest_state)
+                if InputTracker.yield_unconstrained:
+                    OutputChecker.extract_subscriptions(self.component, latest_state)
+                    self.component.update_max_expected_inputs(InputTracker.max_inputs_counted)
                 CANBus.write(None, InputTracker.get_consumed_messages(), self.component.name)
 
     def _capture_output(self, state: SimState):

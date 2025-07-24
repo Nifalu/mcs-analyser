@@ -66,14 +66,14 @@ class Coordinator:
         for subscription in c.subscriptions:
             does_expect.append(Config.message_name_lookup.get(subscription, str(subscription)))
         log.info(f"Checking if {[c.name]} can be analysed...")
-        log.info(f"it reads {c.subscriptions} and expects {c.max_expected_inputs} inputs max.")
+        log.info(f"it reads {does_expect} and expects {c.max_expected_inputs} inputs max.")
         log.info(f"  {[c.name]} expects types {does_expect} for a total of max {c.max_expected_inputs} inputs.")
         log.info(f"  bus can provide {can_provide}")
 
         if not all(key in can_provide for key in does_expect):
             log.info(f"Buffer can't provide all message types.")
             return False
-        if c.max_expected_inputs > bus.number_of_msgs_of_types(c.subscriptions):
+        if c.max_expected_inputs > bus.number_of_msgs_of_types(c.subscriptions) * 2:
             log.info(f"Buffer can't provide enough messages.")
             return False
         log.info(f"Good to go!")

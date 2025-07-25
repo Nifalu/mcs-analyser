@@ -9,18 +9,16 @@ int main() {
     // Read fuel quantity from sensors
     scanf("%lu", &fuel_pounds);
     
-    // Send fuel level
-    if (fuel_pounds <= 100000) {  // Max fuel capacity check
+    // Single output based on fuel level
+    if (fuel_pounds < 2000) {
+        // Critical fuel - send warning
+        printf("%lu%lu\n", MSG_FUEL_WARNING, 2);
+    } else if (fuel_pounds < 8000) {
+        // Low fuel - send warning
+        printf("%lu%lu\n", MSG_FUEL_WARNING, 1);
+    } else if (fuel_pounds <= 100000) {
+        // Normal - send fuel level
         printf("%lu%lu\n", MSG_FUEL_LEVEL, fuel_pounds);
-        
-        // Generate fuel warnings based on quantity
-        if (fuel_pounds < 1000) {  // Critical fuel
-            printf("%lu%lu\n", MSG_FUEL_WARNING, 3);  // Level 3 - Emergency
-        } else if (fuel_pounds < 5000) {  // Low fuel
-            printf("%lu%lu\n", MSG_FUEL_WARNING, 2);  // Level 2 - Caution
-        } else if (fuel_pounds < 10000) {  // Fuel advisory
-            printf("%lu%lu\n", MSG_FUEL_WARNING, 1);  // Level 1 - Advisory
-        }
     }
     
     return 0;

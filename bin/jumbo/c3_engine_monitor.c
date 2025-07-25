@@ -34,27 +34,20 @@ int main() {
         }
     }
     
-    // Generate warnings based on engine parameters
+    // Generate output based on engine parameters
     if (inputs_received == 2) {
-        uint64_t warning_level = 0;
-        
-        // Check temperature thresholds
-        if (engine_temp > 900) {  // Critical temp
-            warning_level = 3;
-        } else if (engine_temp > 800) {  // High temp
-            warning_level = 2;
-        } else if (engine_rpm > 110) {  // Over-speed (assuming % of max)
-            warning_level = 2;
-        } else if (engine_rpm < 20 && engine_temp < 200) {  // Engine stalled
-            warning_level = 3;
+
+        // Determine output based on conditions
+        if (engine_temp > 850 || (engine_rpm < 20 && engine_temp < 200)) {
+            // Critical condition - send warning
+            printf("%lu%lu\n", MSG_ENGINE_WARNING, 2);
+        } else if (engine_temp > 700 || engine_rpm > 100) {
+            // Caution condition - send warning
+            printf("%lu%lu\n", MSG_ENGINE_WARNING, 1);
+        } else {
+            // Normal operation - send EICAS update
+            printf("%lu%lu\n", MSG_EICAS_UPDATE, (engine_temp << 16) | engine_rpm);
         }
-        
-        if (warning_level > 0) {
-            printf("%lu%lu\n", MSG_ENGINE_WARNING, warning_level);
-        }
-        
-        // Always update engine display
-        printf("%lu%lu\n", MSG_EICAS_UPDATE, (engine_temp << 16) | engine_rpm);
     }
     
     return 0;

@@ -30,31 +30,35 @@ int main() {
     // Only proceed if we got all required inputs
     if (inputs_received == 7) {  // All 3 bits set
         uint64_t flight_mode = 0;
-        
-        // Determine flight mode based on parameters
-        if (altitude < 50 && airspeed < 50) {
+        uint64_t output_state = 0;  // Determines which output to send
+
+        // Determine flight mode
+        if (altitude < 100) {
             flight_mode = 1;  // GROUND
-        } else if (altitude < 1000 && airspeed < 200) {
-            flight_mode = 2;  // TAKEOFF
-        } else if (altitude > 28000) {
+        } else if (altitude > 10000) {
             flight_mode = 3;  // CRUISE
-        } else if (altitude < 5000 && airspeed < 180) {
-            flight_mode = 4;  // APPROACH
         } else {
-            flight_mode = 5;  // CLIMB/DESCENT
+            flight_mode = 2;  // CLIMB/DESCENT
         }
-        
-        // Send flight mode
-        printf("%lu%lu\n", MSG_FLIGHT_MODE, flight_mode);
-        
-        // Calculate and send display data for Primary Flight Display
-        // Pack altitude and airspeed into single message
-        uint64_t pfd_data = (altitude << 16) | (airspeed & 0xFFFF);
-        printf("%lu%lu\n", MSG_PFD_UPDATE, pfd_data);
-        
-        // Calculate optimal hydraulic settings based on flight mode
-        uint64_t hydraulic_setting = flight_mode * 20;  // Simplified
-        printf("%lu%lu\n", MSG_HYDRAULIC_COMMAND, hydraulic_setting);
+
+        // Determine which output to send based on conditions
+        if (altitude < 1000 && airspeed < 150) {
+            output_state = 1;  // Send hydraulic command
+        } else if (altitude > 5000 && fuel_level < 10000) {
+            output_state = 2;  // Send PFD update
+        } else {
+            output_state = 0;  // Send flight mode
+        }
+
+        // Single printf based on state
+        if (output_state == 0) {
+            printf("%lu%lu\n", MSG_FLIGHT_MODE, flight_mode);
+        } else if (output_state == 1) {
+            printf("%lu%lu\n", MSG_HYDRAULIC_COMMAND, flight_mode * 20);
+        } else {
+            uint64_t pfd_data = (altitude << 16) | (airspeed & 0xFFFF);
+            printf("%lu%lu\n", MSG_PFD_UPDATE, pfd_data);
+        }
     }
     
     return 0;

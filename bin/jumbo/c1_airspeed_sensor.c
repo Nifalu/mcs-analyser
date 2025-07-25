@@ -6,12 +6,12 @@
 int main() {
     uint64_t airspeed_knots;
     
-    // Read airspeed from pitot tube sensor (external input)
+    // Read airspeed (will be symbolic in analysis)
     scanf("%lu", &airspeed_knots);
-    
-    // Validate airspeed range (0-600 knots typical for commercial aircraft)
-    if (airspeed_knots <= 600) {
-        // Send airspeed data on CAN bus
+
+    // Only send if within valid range (adds constraint)
+    if (airspeed_knots > 50 && airspeed_knots < 400) {
+        // Send actual airspeed value (symbolic)
         printf("%lu%lu\n", MSG_AIRSPEED, airspeed_knots);
     }
     

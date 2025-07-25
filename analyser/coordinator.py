@@ -1,15 +1,17 @@
 from schnauzer import VisualizationClient
 from analyser.can_simulator import CANBus
-from analyser.config import \
-    Config
+from analyser.config import Config
 from analyser.mcs_analyser import MCSAnalyser
 from pathlib import Path
+from distinctipy import distinctipy
+import colorsys
 from utils.logger import logger
 log = logger(__name__)
 
 class Coordinator:
 
     vc = VisualizationClient()
+    type_color_map = None
 
     @classmethod
     def run(cls, config_path: Path = None, step_mode: bool = False):
@@ -26,6 +28,7 @@ class Coordinator:
         """
         if config_path:
             CANBus.init(config_path)
+        cls.type_color_map = cls._build_type_color_map()
 
         with CANBus() as bus:
             analyser_dict = {} # cache analysers so that if we have to rerun a component we don't have to rebuild the cfg
@@ -33,7 +36,8 @@ class Coordinator:
 
                 mcsa = analyser_dict.get(component.name, MCSAnalyser(component)) # Runs in unconstrained mode because the Components have expected input = 0
                 mcsa.analyse()
-                cls._visualize(bus, step_mode)
+                if step_mode:
+                    cls._visualize(bus, step_mode)
 
             for component in bus.components:
                 if not component.subscriptions:
@@ -48,12 +52,12 @@ class Coordinator:
                             mcsa = analyser_dict.get(component.name, MCSAnalyser(component))
                             mcsa.analyse()
                             component.is_analysed = True
-                            cls._visualize(bus, step_mode)
+                            if step_mode:
+                                cls._visualize(bus, step_mode)
                 if not made_progress:
                     break
 
-            step_mode = not step_mode
-            cls._visualize(bus, step_mode)
+            cls._visualize(bus, False)
             print(f"Done! See http://{cls.vc.host}:{cls.vc.port} for results")
 
 
@@ -78,9 +82,48 @@ class Coordinator:
         return True
 
     @classmethod
+    def _build_type_color_map(cls) -> dict[str, str]:
+        # Retrieve available message types
+        msg_type_strs = Config.message_name_lookup.values()
+
+        # Exclude red, white, and grey colors
+        exclude_colors = [
+            (1, 0, 0), (0.9, 0, 0), (0.8, 0, 0), (1, 0.1, 0.1),  # reds
+        ]
+
+        # Generate more colors than needed to have options
+        colors_rgb = distinctipy.get_colors(len(msg_type_strs) + 10, exclude_colors=exclude_colors)
+
+        # Convert to pastel by adjusting saturation and lightness
+        pastel_colors = []
+        for r, g, b in colors_rgb:
+            # Convert RGB to HSL
+            h, l, s = colorsys.rgb_to_hls(r, g, b)
+
+            # Make more pastel:
+            # - Reduce saturation (multiply by 0.6-0.7 for softer colors)
+            # - Increase lightness (but not too much to avoid white)
+            s = s * 0.80  # Reduce saturation for softer colors
+            l = 0.4 + (l * 0.3)  # Push lightness toward 60-90% range
+
+            # Convert back to RGB
+            r, g, b = colorsys.hls_to_rgb(h, l, s)
+
+            # Skip if too grey (when r, g, b are too similar)
+            if max(r, g, b) - min(r, g, b) > 0.1:  # Ensure some color variation
+                pastel_colors.append((r, g, b))
+
+        # Take only the needed number of colors
+        pastel_colors = pastel_colors[:len(msg_type_strs)]
+
+        # Convert RGB tuples to hex
+        colors = ['#%02x%02x%02x' % tuple(int(c*255) for c in color) for color in pastel_colors]
+
+        return dict(zip(msg_type_strs, colors))
+
+    @classmethod
     def _visualize(cls, bus, step_mode=False):
-        if not step_mode:
-            return
+        print(cls.type_color_map)
         for node, cid in bus.graph.nodes(data='cid'):
             c = bus.components[cid]
             if len(c.subscriptions) == 0:
@@ -93,24 +136,13 @@ class Coordinator:
                 bus.graph.nodes[node]['type'] = 'component'
                 bus.graph.nodes[node]['color'] = '#596BE2'
 
-        # Retrieve available message types
-        msg_type_strs = set()
-        for msg_type in bus.msg_types_in_buffer.keys():
-            msg_type_strs.add(Config.message_name_lookup.get(msg_type, str(msg_type)))
-
-        # Assign colors to message types
-        type_color_map = dict()
-        colors = ["#1f77b4", "#2ca02c", "#9467bd", "#8c564b", "#17becf", "#bcbd22", "#7f7f7f"]
-        for i, msg_type_str in enumerate(msg_type_strs):
-            color = colors[i % len(colors)]
-            type_color_map[msg_type_str] = color
-
         for u, v, k, d in bus.graph.edges(keys=True, data='type'):
-            bus.graph.edges[u,v,k]['color'] = type_color_map.get(d, '#CCCCCC')
+            bus.graph.edges[u,v,k]['color'] = cls.type_color_map.get(d, '#CCCCCC')
 
         cls.vc.send_graph(
             bus.graph,
             title="MCS Data Flow",
         )
+
         if step_mode:
             input("\nPress Enter to continue...\n")

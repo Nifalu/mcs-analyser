@@ -26,32 +26,22 @@ int main() {
         }
     }
     
-    // Calculate stall speed based on flaps configuration
+    // Generate stall warnings based on airspeed and flaps
     if (inputs_received == 2) {
-        uint64_t stall_speed = 140;  // Base stall speed in knots
-        
-        // Adjust stall speed for flaps
-        if (flaps_position > 20) {
-            stall_speed = 110;  // Lower stall speed with flaps
-        } else if (flaps_position > 10) {
-            stall_speed = 125;
+        // Determine output priority
+        if (airspeed < 80) {
+            // Critical stall - highest priority
+            printf("%lu%lu\n", MSG_STALL_WARNING, 2);
+        } else if (airspeed < 120) {
+            // Near stall - medium priority
+            printf("%lu%lu\n", MSG_STALL_WARNING, (120 - airspeed) / 20);
+        } else if (flaps_position > 20 && airspeed < 150) {
+            // Configuration warning - send MFD update
+            printf("%lu%lu\n", MSG_STALL_WARNING, ((150 - airspeed) << 8) | flaps_position);
+        } else {
+            // Normal flight - send basic MFD data
+            printf("%lu%lu\n", MSG_STALL_WARNING, airspeed);
         }
-        
-        // Check for stall conditions
-        if (airspeed < stall_speed - 20) {
-            // Stalled!
-            printf("%lu%lu\n", MSG_STALL_WARNING, 3);  // Level 3 - STALL!
-        } else if (airspeed < stall_speed - 10) {
-            // Near stall
-            printf("%lu%lu\n", MSG_STALL_WARNING, 2);  // Level 2 - Impending stall
-        } else if (airspeed < stall_speed + 10) {
-            // Approaching stall speed
-            printf("%lu%lu\n", MSG_STALL_WARNING, 1);  // Level 1 - Caution
-        }
-        
-        // Send data to MFD for angle of attack display
-        uint64_t aoa_data = ((140 - airspeed) << 8) | flaps_position;
-        printf("%lu%lu\n", MSG_MFD_UPDATE, aoa_data);
     }
     
     return 0;

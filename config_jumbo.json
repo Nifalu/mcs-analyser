@@ -1,7 +1,7 @@
 {
   "var_length": 64,
-  "input_hooks": ["scanf", "gets", "read"],
-  "output_hooks": ["printf", "puts", "write"],
+  "input_hooks": ["scanf"],
+  "output_hooks": ["printf"],
   "components_dir": "./bin/jumbo",
   "components": [
     {
@@ -63,6 +63,11 @@
       "name": "Audio Warning System",
       "filename": "c12_audio_warning",
       "description": "Plays audio alerts for critical warnings (consumer only)"
+    },
+    {
+      "name": "Navigation Computer",
+      "filename": "c13_navigation_computer",
+      "description": "Processes navigation data and coordinates with multiple systems"
     }
   ]
 }

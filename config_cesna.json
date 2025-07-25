@@ -1,28 +1,43 @@
 {
   "var_length": 64,
-  "input_hooks": ["scanf", "gets", "read"],
-  "output_hooks": ["printf", "puts", "write"],
+  "input_hooks": ["scanf"],
+  "output_hooks": ["printf"],
   "components_dir": "./bin/cesna",
   "components": [
     {
-      "name": "Engine temp sensor",
-      "filename": "c1"
+      "name": "Speed Sensor",
+      "filename": "c1_speed_sensor",
+      "description": "Produces speed readings"
     },
     {
-      "name": "Engine rpm sensor",
-      "filename": "c2"
+      "name": "Temp Sensor",
+      "filename": "c2_temp_sensor",
+      "description": "Produces temperature readings"
     },
     {
-      "name": "Engine monitor",
-      "filename": "c3"
+      "name": "Speed Processor",
+      "filename": "c3_speed_processor",
+      "description": "Processes speed data and outputs status"
     },
     {
-      "name": "Dashboard",
-      "filename": "c4"
+      "name": "System Monitor",
+      "filename": "c4_system_monitor",
+      "description": "Monitors overall system state from multiple inputs"
     },
     {
-      "name": "Warning Light",
-      "filename": "c5"
+      "name": "Quick Alert",
+      "filename": "c5_quick_alert",
+      "description": "Generates warnings from individual sensor readings"
+    },
+    {
+      "name": "Display",
+      "filename": "c6_display",
+      "description": "Shows system state (consumer only)"
+    },
+    {
+      "name": "Alarm",
+      "filename": "c7_alarm",
+      "description": "Sounds warnings (consumer only)"
     }
   ]
 }

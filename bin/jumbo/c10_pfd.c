@@ -21,10 +21,10 @@ int main() {
 
         // Determine display color based on warning level
         uint64_t display_color;
-        if (warning_level >= 3) {
+        if (warning_level >= 2) {
             // Master Warning - Red
             display_color = 0xFF0000;
-        } else if (warning_level >= 2) {
+        } else if (warning_level >= 1) {
             // Master Caution - Amber
             display_color = 0xFFAA00;
         } else {

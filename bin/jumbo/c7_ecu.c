@@ -29,41 +29,40 @@ int main() {
     // Calculate engine commands based on flight mode and airspeed
     if (inputs_received == 2) {
         uint64_t thrust_percent = 0;
-        
-        switch (flight_mode) {
-            case 1:  // GROUND - Idle thrust
-                thrust_percent = 10;
-                break;
-            case 2:  // TAKEOFF - Maximum thrust
-                thrust_percent = 100;
-                break;
-            case 3:  // CRUISE - Efficient thrust
-                thrust_percent = 75;
-                break;
-            case 4:  // APPROACH - Reduced thrust
-                thrust_percent = 40;
-                break;
-            case 5:  // CLIMB/DESCENT - Variable thrust
+        uint64_t output_type = 0;
+
+        // Calculate thrust
+        if (flight_mode == 1) {
+            thrust_percent = 15;
+        } else if (flight_mode == 3) {
+            if (airspeed > 300) {
+                thrust_percent = 70;
+            } else if (airspeed < 200) {
                 thrust_percent = 85;
-                break;
-            default:
-                thrust_percent = 50;
+            } else {
+                thrust_percent = airspeed / 4;  // Symbolic calculation
+            }
+        } else {
+            thrust_percent = 60 + (airspeed / 10);  // Symbolic
         }
-        
-        // Adjust for airspeed (simplified auto-throttle)
-        if (airspeed < 150 && flight_mode > 1) {
-            thrust_percent += 15;  // Need more thrust at low speed
+
+        // Determine priority output
+        if (thrust_percent > 90) {
+            output_type = 1;  // High thrust - send temperature
+        } else if (thrust_percent < 20 && flight_mode != 1) {
+            output_type = 2;  // Low thrust in flight - send RPM
+        } else {
+            output_type = 0;  // Normal - send command
         }
-        
-        // Send engine command
-        printf("%lu%lu\n", MSG_ENGINE_COMMAND, thrust_percent);
-        
-        // Calculate expected engine parameters (for sensors to read)
-        uint64_t expected_rpm = thrust_percent;
-        uint64_t expected_temp = 300 + (thrust_percent * 6);  // 300-900 range
-        
-        printf("%lu%lu\n", MSG_ENGINE_RPM, expected_rpm);
-        printf("%lu%lu\n", MSG_ENGINE_TEMP, expected_temp);
+
+        // Single printf based on priority
+        if (output_type == 0) {
+            printf("%lu%lu\n", MSG_ENGINE_COMMAND, thrust_percent);
+        } else if (output_type == 1) {
+            printf("%lu%lu\n", MSG_ENGINE_TEMP, 400 + (thrust_percent * 4));
+        } else {
+            printf("%lu%lu\n", MSG_ENGINE_RPM, thrust_percent);
+        }
     }
     
     return 0;

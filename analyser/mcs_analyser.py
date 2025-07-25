@@ -89,7 +89,7 @@ class MCSAnalyser:
                     latest_state = simgr.active[0]
                     simgr.step()
                     step_count += 1
-                log.error(f"stepped {step_count} steps and read {InputTracker.input_counter} inputs but consumed {InputTracker.consumed_messages} messages")
+                log.debug(f"stepped {step_count} steps and read {InputTracker.input_counter} inputs but consumed {InputTracker.consumed_messages} messages")
 
                 if InputTracker.yield_unconstrained:
                     OutputChecker.extract_subscriptions(self.component, latest_state)

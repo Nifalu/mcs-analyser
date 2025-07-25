@@ -30,18 +30,13 @@ class CANBus:
         components_dir = Path(data['components_dir'])
         symbols = None
         for comp in data['components']:
-            path = Path(components_dir, comp['filename'])
-
-            virtual = not path or not path.is_file()
-
             component = Component(
                 name=comp['name'],
                 path=Path(components_dir, comp['filename']),
-                is_virtual=virtual
             )
-            cls._register(component)
+            cls._register(component, comp['description'])
 
-            if not virtual and not symbols:
+            if not symbols:
                 symbols = cls.extract_msg_id_map(component.path, prefix="MSG_")
 
         Config.init(data['var_length'],
@@ -53,9 +48,9 @@ class CANBus:
         cls._initialized = True
 
     @classmethod
-    def _register(cls, component: Component):
+    def _register(cls, component: Component, description: str):
         cid = cls.components.add(component)
-        cls.graph.add_node(component.name, cid=cid)
+        cls.graph.add_node(component.name, cid=cid, description=description)
 
     @classmethod
     def _add_to_buffer(cls, msg: Message) -> bool:
@@ -73,7 +68,7 @@ class CANBus:
             cls.msg_types_in_buffer[msg_type] += 1
         else:
             cls.msg_types_in_buffer[msg_type] = 1
-        log.critical(f"{[msg.producer_component_name]} produced a new message: {msg}")
+        log.info(f"{[msg.producer_component_name]} produced a new message: {msg}")
         return True
 
     @classmethod
@@ -105,11 +100,7 @@ class CANBus:
 
         for consumed_msg in consumed_msgs:
             continue_outer = False
-            log.critical(f"Checking if we add msg to graph")
-            log.debug(f"Messages: {consumed_msgs}")
             msg_id = cls.buffer.get_id(consumed_msg)
-            if msg_id is None:
-                log.critical("MSG_ID IS NONE")
             source = consumed_msg.producer_component_name
             edge_dict = cls.graph.get_edge_data(source, target)
             if edge_dict:
@@ -131,7 +122,7 @@ class CANBus:
                 msg_data_constraints=str(consumed_msg.msg_data.constraints),
                 msg_id = msg_id
             )
-            log.info(f"Added edge between {[source]} -> {[target]} with message of type {[consumed_msg.msg_type_str]}")
+            log.debug(f"Added edge between {[source]} -> {[target]} with message of type {[consumed_msg.msg_type_str]}")
 
     @staticmethod
     def extract_msg_id_map(binary_path, prefix) -> dict[int, str]:

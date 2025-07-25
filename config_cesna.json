@@ -2,7 +2,7 @@
   "var_length": 64,
   "input_hooks": ["scanf", "gets", "read"],
   "output_hooks": ["printf", "puts", "write"],
-  "components_dir": "./bin/simple",
+  "components_dir": "./bin/cesna",
   "components": [
     {
       "name": "Engine temp sensor",

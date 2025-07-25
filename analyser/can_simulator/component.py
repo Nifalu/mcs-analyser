@@ -6,11 +6,10 @@ from utils.logger import logger
 log = logger(__name__)
 
 class Component:
-    def __init__(self, name: str, path: Path, is_virtual: bool = False):
+    def __init__(self, name: str, path: Path):
         self.name = name
         self.path = path
         self.max_expected_inputs = 0
-        self.is_virtual = is_virtual
         self.is_analysed = False
 
         self.subscriptions: set[int] = set()

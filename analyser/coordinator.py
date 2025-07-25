@@ -12,7 +12,7 @@ class Coordinator:
     vc = VisualizationClient()
 
     @classmethod
-    def run(cls, config_path: Path = None):
+    def run(cls, config_path: Path = None, step_mode: bool = False):
         """
         Run the simulation
         :return:
@@ -30,66 +30,60 @@ class Coordinator:
         with CANBus() as bus:
             analyser_dict = {} # cache analysers so that if we have to rerun a component we don't have to rebuild the cfg
             for component in bus.components:
-                if component.is_virtual:
-                    continue
 
                 mcsa = analyser_dict.get(component.name, MCSAnalyser(component)) # Runs in unconstrained mode because the Components have expected input = 0
                 mcsa.analyse()
+                cls._visualize(bus, step_mode)
 
             for component in bus.components:
-                if component.is_virtual or not component.subscriptions:
+                if not component.subscriptions:
                     component.is_analysed = True
 
-
             while True:
-                done = True
+                made_progress = False
                 for component in bus.components:
                     if not component.is_analysed:
-                        done = False
                         if cls._can_analyse(component, bus):
+                            made_progress = True
                             mcsa = analyser_dict.get(component.name, MCSAnalyser(component))
                             mcsa.analyse()
                             component.is_analysed = True
-                if done:
+                            cls._visualize(bus, step_mode)
+                if not made_progress:
                     break
-            cls._visualize(bus)
 
+            step_mode = not step_mode
+            cls._visualize(bus, step_mode)
             print(f"Done! See http://{cls.vc.host}:{cls.vc.port} for results")
 
 
     @classmethod
     def _can_analyse(cls, c, bus) -> bool:
-        can_provide = {}
+        can_provide = []
         for msg_type, count in bus.msg_types_in_buffer.items():
-            can_provide[Config.message_name_lookup.get(msg_type, str(msg_type))] = count
+            can_provide.append(Config.message_name_lookup.get(msg_type, str(msg_type)))
         does_expect = []
         for subscription in c.subscriptions:
             does_expect.append(Config.message_name_lookup.get(subscription, str(subscription)))
-        log.info(f"Checking if {[c.name]} can be analysed...")
-        log.info(f"it reads {does_expect} and expects {c.max_expected_inputs} inputs max.")
-        log.info(f"  {[c.name]} expects types {does_expect} for a total of max {c.max_expected_inputs} inputs.")
-        log.info(f"  bus can provide {can_provide}")
-
+        """
         if not all(key in can_provide for key in does_expect):
             log.info(f"Buffer can't provide all message types.")
             return False
-        if c.max_expected_inputs > bus.number_of_msgs_of_types(c.subscriptions) * 2:
-            log.info(f"Buffer can't provide enough messages.")
+        """
+        if c.max_expected_inputs // 2 > bus.number_of_msgs_of_types(c.subscriptions):
+            log.info(f"Not ready to analyse as not enough messages of the subscribed types are available.")
+            log.info(f"{[c.name]} expects types {does_expect} for a total of max {c.max_expected_inputs} inputs.")
+            log.info(f"bus can provide {can_provide}")
             return False
-        log.info(f"Good to go!")
         return True
 
-
-
     @classmethod
-    def _visualize(cls, bus):
-
+    def _visualize(cls, bus, step_mode=False):
+        if not step_mode:
+            return
         for node, cid in bus.graph.nodes(data='cid'):
             c = bus.components[cid]
-            if c.is_virtual:
-                bus.graph.nodes[node]['type'] = 'virtual component'
-                bus.graph.nodes[node]['color'] = '#CCCCCC'
-            elif len(c.subscriptions) == 0:
+            if len(c.subscriptions) == 0:
                 bus.graph.nodes[node]['type'] = 'source component'
                 bus.graph.nodes[node]['color'] = '#20BAA6'
             elif len(c.produced_msg_ids) == 0:
@@ -112,10 +106,11 @@ class Coordinator:
             type_color_map[msg_type_str] = color
 
         for u, v, k, d in bus.graph.edges(keys=True, data='type'):
-            print(u, v, k, d)
             bus.graph.edges[u,v,k]['color'] = type_color_map.get(d, '#CCCCCC')
 
         cls.vc.send_graph(
             bus.graph,
             title="MCS Data Flow",
         )
+        if step_mode:
+            input("\nPress Enter to continue...\n")

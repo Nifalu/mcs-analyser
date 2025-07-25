@@ -30,4 +30,3 @@ class Message:
 
     def __str__(self):
         return f"{[self.msg_type_str]}"
-

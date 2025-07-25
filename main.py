@@ -1,12 +1,12 @@
 from utils.logger import logger, set_project_log_level, set_dependency_log_level
 from logging import DEBUG, INFO, WARNING, ERROR, CRITICAL
-set_project_log_level(DEBUG)
-set_dependency_log_level(ERROR)
 log = logger(__name__)
-from analyser.coordinator import Coordinator
-
+set_dependency_log_level(ERROR)  # Keep dependencies quiet
+import argparse
 from pathlib import Path
 import os
+
+from analyser.coordinator import Coordinator
 
 COMPONENTS_DIR = Path(__file__).parent / "bin"
 
@@ -35,28 +35,48 @@ def get_component_paths() -> list[Path]:
     return components
 
 
-
 def main():
+    parser = argparse.ArgumentParser(description='CAN Bus Analysis Coordinator')
+    parser.add_argument('--config', '-c', type=Path,
+                       help='Path to configuration file (default: config.json in current directory)')
+    parser.add_argument('--step', '-s', action='store_true',
+                       help='Step through analysis phases with pauses for visualization')
+    parser.add_argument('--debug', '-d', action='store_true',
+                       help='Enable debug logging (verbose output)')
+    parser.add_argument('--silent', '-q', action='store_true',
+                       help='Enable silent mode (warnings and errors only)')
+
+    args = parser.parse_args()
+
+    # Set logging level based on arguments
+    if args.debug:
+        project_level = DEBUG
+    elif args.silent:
+        project_level = WARNING
+    else:
+        project_level = INFO  # Default
+
+    # Set the logging levels
+    set_project_log_level(project_level)
+
+    # Log the current mode
+    if args.debug:
+        log.debug("Running in DEBUG mode - verbose logging enabled")
+    elif args.silent:
+        # Won't show at WARNING level, but that's ok
+        pass
+    else:
+        log.info("Running in normal mode - INFO level logging")
+
+    # Use provided config path or default to config.json
+    config_path = args.config if args.config else Path.cwd() / "config.json"
+
+    if not config_path.exists():
+        log.error(f"Configuration file not found: {config_path}")
+        return
+
     co = Coordinator()
-    co.run()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    co.run(config_path=config_path, step_mode=args.step)
 
 
 if __name__ == "__main__":

@@ -4,7 +4,8 @@ from pathlib import Path
 import angr
 from networkx import MultiDiGraph
 
-from analyser.can_simulator import Component, Message
+from analyser.can_simulator.component import Component
+from analyser.can_simulator.message import Message
 from analyser.utils import Config, IndexedSet, MessageTracer, logger
 log = logger(__name__)
 

@@ -1,6 +1,5 @@
 from analyser.can_simulator import Message
-from analyser.io import IOState
-from analyser.utils import logger
+from analyser.utils import logger, IOState
 log = logger(__name__)
 
 

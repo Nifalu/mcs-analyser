@@ -1,7 +1,4 @@
-from analyser.utils import Config, logger
-from typing import TYPE_CHECKING
-if TYPE_CHECKING:
-    from analyser.io import IOState
+from analyser.utils import Config, logger, IOState
 
 log = logger(__name__)
 

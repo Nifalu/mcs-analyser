@@ -2,7 +2,7 @@ import re
 import angr
 from abc import abstractmethod, ABC
 
-from analyser.io import InputTracker
+from analyser.io.input_tracker import InputTracker
 from analyser.utils import logger
 log = logger(__name__)
 

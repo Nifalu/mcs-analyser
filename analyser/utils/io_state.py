@@ -2,7 +2,8 @@ import claripy
 from angr import SimState
 from typing import Iterable
 
-from analyser.utils import Config, logger
+from analyser.utils.config import Config
+from analyser.utils.logger import logger
 log = logger(__name__)
 
 

@@ -4,33 +4,19 @@
 #include "messages.h"
 
 int main() {
-    uint64_t rx_msg_id;
-    uint64_t rx_msg_data;
-    
-    // Read one message (could be either sensor)
-    scanf("%lu%lu", &rx_msg_id, &rx_msg_data);
-    
-    uint64_t warning_level = 0;
-    
-    if (rx_msg_id == MSG_SPEED) {
-        // Process speed
-        if (rx_msg_data > 180) {
-            warning_level = 2;  // High speed warning
-        } else if (rx_msg_data < 30) {
-            warning_level = 1;  // Low speed warning
+    uint64_t rx_msg_id1;
+    uint64_t rx_msg_data1;
+    uint64_t rx_msg_id2;
+    uint64_t rx_msg_data2;
+
+    scanf("%lu%lu", &rx_msg_id1, &rx_msg_data1);
+    if (rx_msg_id1 == MSG_SPEED) {
+        scanf("%lu%lu", &rx_msg_id2, &rx_msg_data2);
+        if (rx_msg_id2 == MSG_TEMP) {
+            printf("%lu%lu\n", MSG_WARNING, 1);
         }
-    } else if (rx_msg_id == MSG_TEMP) {
-        // Process temperature
-        if (rx_msg_data > 120) {
-            warning_level = 2;  // High temp warning
-        } else if (rx_msg_data < 20) {
-            warning_level = 1;  // Low temp warning
-        }
+    } else if (rx_msg_id1 == MSG_TEMP) {
+        printf("%lu%lu\n", MSG_WARNING, 1);
     }
-    
-    if (warning_level > 0) {
-        printf("%lu%lu\n", MSG_WARNING, warning_level);
-    }
-    
     return 0;
 }

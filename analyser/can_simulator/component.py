@@ -1,6 +1,4 @@
-from typing import TYPE_CHECKING
-if TYPE_CHECKING:
-    from pathlib import Path
+from pathlib import Path
 
 from analyser.utils import Config, logger
 log = logger(__name__)

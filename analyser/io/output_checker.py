@@ -1,9 +1,10 @@
 import angr
 import re
 
-from analyser.io import InputTracker, OutputParserRegistry, OutputFunctionParser, IOState
 from analyser.can_simulator import Component, Message
-from analyser.utils import logger
+from analyser.io.input_tracker import InputTracker
+from analyser.io.output_parser import OutputParserRegistry, OutputFunctionParser
+from analyser.utils import logger, IOState
 log = logger(__name__)
 
 

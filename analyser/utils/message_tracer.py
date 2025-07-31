@@ -1,4 +1,4 @@
-from analyser.utils import logger
+from analyser.utils.logger import logger
 log = logger(__name__)
 
 class MessageTracer:
@@ -42,35 +42,75 @@ class MessageTracer:
     @classmethod
     def get_full_trace(cls, msg_id: int) -> list[list[int]]:
         """Get all paths from source messages to this message as lists of msg_ids"""
-        paths = []
 
-        def trace_back(current_id: int, current_path: list[int]):
-            # Add current message to path
-            current_path = current_path + [current_id]
-
-            # Get producers of this message
-            producers = cls._producers_of.get(current_id, [])
+        def get_paths_to(target_id: int) -> list[list[int]]:
+            """Recursively build paths to target_id"""
+            # get all possible ways how this message was produced.
+            producers = cls._producers_of.get(target_id, [])
 
             if not producers:
-                # This is a source message - we've reached the beginning
-                paths.append(current_path[::-1])  # Reverse to show source->destination
-                return
+                # This is a source message - return a path with just itself
+                return [[target_id]]
 
-            # For each way this message was produced
+            all_paths = []
+
+            # Each producer represents one way to create this message (OR relationship)
             for prod in producers:
-                # Trace back through each input
-                for input_id in prod['consumed_msg_ids']:
-                    trace_back(input_id, current_path)
+                if not prod['consumed_msg_ids']:
+                    # No inputs but has a producer (shouldn't normally happen)
+                    all_paths.append([target_id])
+                elif len(prod['consumed_msg_ids']) == 1:
+                    # Single input - extend each path from that input
+                    input_id = prod['consumed_msg_ids'][0]
+                    input_paths = get_paths_to(input_id)
+                    for path in input_paths:
+                        # Add current message to the end of each input path
+                        all_paths.append(path + [target_id])
+                else:
+                    # Multiple inputs (AND relationship) - combine all inputs
+                    # First, collect all unique source messages from all inputs
+                    all_sources = set()
+                    for input_id in prod['consumed_msg_ids']:
+                        input_paths = get_paths_to(input_id)
+                        for path in input_paths:
+                            # Add all messages except the input itself (to avoid duplicates)
+                            all_sources.update(path[:-1])
 
-        trace_back(msg_id, [])
-        return paths
+                    # Create a single path with all sources, then the inputs, then target
+                    combined_path = sorted(list(all_sources))  # Sort for consistent ordering
+                    combined_path.extend(prod['consumed_msg_ids'])  # Add the immediate inputs
+                    combined_path.append(target_id)  # Add the target
+
+                    # Remove duplicates while preserving order
+                    seen = set()
+                    deduped_path = []
+                    for msg in combined_path:
+                        if msg not in seen:
+                            seen.add(msg)
+                            deduped_path.append(msg)
+
+                    all_paths.append(deduped_path)
+
+            return all_paths
+
+        return get_paths_to(msg_id)
+
+    @classmethod
+    def get_all_traces(cls, msg_ids: set[int]) -> dict[int, list[list[int]]]:
+        """Get traces for all messages as a dictionary mapping msg_id to paths"""
+        all_traces = {}
+
+        # Build traces for each message
+        for msg_id in sorted(msg_ids):
+            all_traces[msg_id] = cls.get_full_trace(msg_id)
+
+        return all_traces
 
     @classmethod
     def print_trace(cls, msg_id: int):
         """Print a simple trace for a message"""
         paths = cls.get_full_trace(msg_id)
 
-        print(f"\nTrace for msg_id: {msg_id}:")
-        for i, path in enumerate(paths):
-            path_str = " → ".join(str(p) for p in path)
-            print(f"  Path {i+1}: {path_str}")
+        print(f"\nTrace for msg_id {msg_id}:")
+        for path in paths:
+            print(f"\t{path}")

@@ -1,14 +1,8 @@
-import \
-    claripy
-from claripy import simplify as cl_simplify
-from claripy import ast as cl_ast
-from claripy.solvers import Solver as clSolver
+import claripy
 from angr import SimState
 from typing import Iterable
 
-from analyser.config import \
-    Config
-from utils.logger import logger
+from analyser.utils import Config, logger
 log = logger(__name__)
 
 
@@ -18,13 +12,13 @@ class IOState:
     """
 
     def __init__(self,
-                 bv: cl_ast.BV,
-                 constraints: Iterable[cl_ast.Bool],
+                 bv: claripy.ast.BV,
+                 constraints: Iterable[claripy.ast.Bool],
                  label: str = None,
                  ):
         self.label = label
-        self.bv: cl_ast.BV = bv
-        self.constraints: list[cl_ast.Bool] = list(constraints)
+        self.bv: claripy.ast.BV = bv
+        self.constraints: list[claripy.ast.Bool] = list(constraints)
         self._hash = None
 
     @classmethod
@@ -36,13 +30,13 @@ class IOState:
         """
         Create an unconstrained IOState with the given name and bit-width.
         """
-        bv = cl_ast.bv.BVS(name, Config.default_var_length, explicit_name=explicit_name)
+        bv = claripy.ast.bv.BVS(name, Config.default_var_length, explicit_name=explicit_name)
         return cls(bv, [], label='unconstrained')
 
     @classmethod
     def from_state(
         cls,
-        bv: cl_ast.BV,
+        bv: claripy.ast.BV,
         state: "SimState",
         *,
         simplify: bool = False,
@@ -50,11 +44,11 @@ class IOState:
 
         if bv.symbolic:
             wanted_vars = bv.variables               # e.g. {"scanf_0_14_32"}
-            slice_constraints: list[cl_ast.Bool] = []
+            slice_constraints: list[claripy.ast.Bool] = []
 
             for c in state.solver.constraints:
                 if not wanted_vars.isdisjoint(c.variables):
-                    slice_constraints.append(cl_simplify(c) if simplify else c)
+                    slice_constraints.append(claripy.simplify(c) if simplify else c)
 
             return cls(bv, slice_constraints, label='symbolic')
         else:
@@ -71,9 +65,9 @@ class IOState:
         """Return True if the encapsulated value is concrete."""
         return not self.bv.symbolic
 
-    def range(self, solver: clSolver | None = None) -> tuple[int, int]:
+    def range(self, solver: claripy.solvers.Solver | None = None) -> tuple[int, int]:
         """Return *min*, *max* model of the encapsulated value under its slice."""
-        s = solver or clSolver()
+        s = solver or claripy.Solver()
         if self.constraints:
             s.add(self.constraints)
             lo = s.min(self.bv)
@@ -84,7 +78,7 @@ class IOState:
         return lo, hi
 
     def evaluate_n_values(self, n: int) -> Iterable[int]:
-        solver = clSolver()
+        solver = claripy.Solver()
         solver.add(self.constraints)
 
         if solver.satisfiable():

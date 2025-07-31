@@ -5,21 +5,14 @@ import claripy.ast.bv as bv_module
 from math import factorial
 from angr import SimState, SimulationManager
 
-
-from analyser.config import Config
-from analyser.input_hooks import InputHookRegistry
-from analyser.input_tracker import \
-    InputTracker
-from analyser.output_checker import \
-    setup_output_checker, \
-    OutputChecker
+from analyser.io import InputHookRegistry, InputTracker, OutputChecker, setup_output_checker
 from analyser.can_simulator import Component, Message, CANBus
-from utils.logger import logger
+from analyser.utils import logger, Config
 log = logger(__name__)
 
 NUM_FIND = 100
 
-class MCSAnalyser:
+class ComponentAnalyser:
 
     def __init__(self, component: Component):
         self.component: Component = component

@@ -1,12 +1,12 @@
-from pathlib import Path
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from pathlib import Path
 
-from analyser.config import \
-    Config
-from utils.logger import logger
+from analyser.utils import Config, logger
 log = logger(__name__)
 
 class Component:
-    def __init__(self, name: str, path: Path):
+    def __init__(self, name: str, path: 'Path'):
         self.name = name
         self.path = path
         self.max_expected_inputs = 0

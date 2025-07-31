@@ -4,12 +4,8 @@ from pathlib import Path
 import angr
 from networkx import MultiDiGraph
 
-from analyser.can_simulator.component import Component
-from analyser.can_simulator.message import Message
-from analyser.config import Config
-from analyser.indexed_set import \
-    IndexedSet
-from utils.logger import logger
+from analyser.can_simulator import Component, Message
+from analyser.utils import Config, IndexedSet, MessageTracer, logger
 log = logger(__name__)
 
 class CANBus:
@@ -53,25 +49,6 @@ class CANBus:
         cls.graph.add_node(component.name, cid=cid, description=description)
 
     @classmethod
-    def _add_to_buffer(cls, msg: Message) -> bool:
-        if msg.msg_type.is_symbolic():
-            log.warning(f"{[msg.producer_component_name]} produced a msg with symbolic type: {msg}")
-            return False
-
-        if msg in cls.buffer:
-            log.debug(f"{[msg]} already in buffer")
-            return False
-
-        cls.buffer.add(msg)
-        msg_type = msg.msg_type.bv.concrete_value
-        if msg_type in cls.msg_types_in_buffer:
-            cls.msg_types_in_buffer[msg_type] += 1
-        else:
-            cls.msg_types_in_buffer[msg_type] = 1
-        log.info(f"{[msg.producer_component_name]} produced a new message: {msg}")
-        return True
-
-    @classmethod
     def write(cls, produced_msg: Message = None, consumed_msgs: set[Message] = None, producer_name: str = None):
         if not cls._initialized:
             log.error(f"Writing to an uninitialized CAN bus...")
@@ -84,28 +61,43 @@ class CANBus:
         target = producer_name or produced_msg.producer_component_name
 
         if produced_msg:
-            produced_msg_type = None
             if produced_msg.msg_type.is_symbolic():
-                produced_msg_type = produced_msg.msg_type.bv.concrete_value
+                log.warning(f"{[produced_msg.producer_component_name]} produced a msg with symbolic type: {produced_msg}")
+                return
 
-            success = cls._add_to_buffer(produced_msg)
+            produced_msg_type = produced_msg.msg_type.bv.concrete_value
 
-            if success:
+            is_new_message = not cls.buffer.contains(produced_msg)
+            produced_msg_id = cls.buffer.add(produced_msg)
+            consumed_msgs_ids = [cls.buffer.get_id(m) for m in consumed_msgs]
+
+            if consumed_msgs_ids:
+                MessageTracer.add_production(produced_msg_id, consumed_msgs_ids, target)
+
+            if is_new_message:
+                log.info(f"{[produced_msg.producer_component_name]} produced a new message: {produced_msg}")
+                if produced_msg_type in cls.msg_types_in_buffer:
+                    cls.msg_types_in_buffer[produced_msg_type] += 1
+                else:
+                    cls.msg_types_in_buffer[produced_msg_type] = 1
+
                 for component in cls.components:
                     if produced_msg_type in component.subscriptions:
                         log.info(f"Reopening [{target}] to handle a new message: {produced_msg}")
                         component.is_analysed = False # reopen this component as we got a new message for it.
 
-        # Component consumed at least 1 message to produce another
+            else:
+                log.debug(f"{[produced_msg]} already in buffer")
+
 
         for consumed_msg in consumed_msgs:
             continue_outer = False
-            msg_id = cls.buffer.get_id(consumed_msg)
+            consumed_msg_id = cls.buffer.get_id(consumed_msg)
             source = consumed_msg.producer_component_name
             edge_dict = cls.graph.get_edge_data(source, target)
             if edge_dict:
                 for key, edge in edge_dict.items():
-                    if msg_id == edge['msg_id']:
+                    if consumed_msg_id == edge['msg_id']:
                         log.info(f"Message from ({[source]}->{[target]}) is already in the graph")
                         continue_outer = True
                         break
@@ -120,7 +112,7 @@ class CANBus:
                 msg_type_constraints=str(consumed_msg.msg_type.constraints),
                 msg_data_bv=str(consumed_msg.msg_data.bv),
                 msg_data_constraints=str(consumed_msg.msg_data.constraints),
-                msg_id = msg_id
+                msg_id = consumed_msg_id
             )
             log.debug(f"Added edge between {[source]} -> {[target]} with message of type {[consumed_msg.msg_type_str]}")
 

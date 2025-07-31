@@ -29,6 +29,10 @@ class IndexedSet(Generic[T]):
         """Get ID of existing item, returns None if not found"""
         return self._ids.get(item)
 
+    def contains(self, item: T) -> bool:
+        """Check if item is in this set"""
+        return item in self._ids
+
     def __contains__(self, item: T) -> bool:
         """Check if item is in set"""
         return item in self._ids
@@ -48,7 +52,7 @@ class IndexedSet(Generic[T]):
         """Iterate over (id, item) pairs"""
         return iter(self._items.items())
 
-    def ids(self) -> Iterator[int]:
+    def keys(self) -> Iterator[int]:
         """Iterate over IDs"""
         return iter(self._items.keys())
 
@@ -57,3 +61,11 @@ class IndexedSet(Generic[T]):
         self._items.clear()
         self._ids.clear()
         self._next_id = 0
+
+    def __repr__(self) -> str:
+        items = [repr(self._items[i]) for i in sorted(self._items.keys())]
+        return f"[{', '.join(items)}]"
+
+    def __str__(self) -> str:
+        items = [str(self._items[i]) for i in sorted(self._items.keys())]
+        return f"[{', '.join(items)}]"

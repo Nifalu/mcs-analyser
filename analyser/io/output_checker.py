@@ -1,12 +1,10 @@
 import angr
-import logging
 import re
 
-from analyser.input_tracker import InputTracker
+from analyser.io import InputTracker, OutputParserRegistry, OutputFunctionParser, IOState
 from analyser.can_simulator import Component, Message
-from analyser.output_parser import OutputParserRegistry, OutputFunctionParser
-from analyser.io_state import IOState
-log = logging.getLogger(__name__)
+from analyser.utils import logger
+log = logger(__name__)
 
 
 class OutputChecker:

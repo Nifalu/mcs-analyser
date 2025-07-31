@@ -1,12 +1,13 @@
-from utils.logger import logger, set_project_log_level, set_dependency_log_level
-from logging import DEBUG, INFO, WARNING, ERROR, CRITICAL
+from analyser.utils import logger, set_project_log_level, set_dependency_log_level
+from logging import DEBUG, INFO, WARNING, ERROR
+
 log = logger(__name__)
 set_dependency_log_level(ERROR)  # Keep dependencies quiet
 import argparse
 from pathlib import Path
 import os
 
-from analyser.coordinator import Coordinator
+from analyser import Coordinator
 
 COMPONENTS_DIR = Path(__file__).parent / "bin"
 

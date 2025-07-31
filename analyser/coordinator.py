@@ -1,14 +1,18 @@
+from pathlib import Path
+from distinctipy import get_colors
+from colorsys import rgb_to_hls, hls_to_rgb
+
 from schnauzer import VisualizationClient
 from analyser.can_simulator import CANBus
-from analyser.config import Config
-from analyser.mcs_analyser import MCSAnalyser
-from pathlib import Path
-from distinctipy import distinctipy
-import colorsys
-from utils.logger import logger
+from analyser.component_analyser import ComponentAnalyser
+from analyser.utils import Config, MessageTracer, logger
 log = logger(__name__)
 
 class Coordinator:
+    """
+    The Coordinator marks the entry point of the 'Multi Component Analyser' and coordinates all analysing steps taken.
+
+    """
 
     vc = VisualizationClient()
     type_color_map = None
@@ -34,7 +38,7 @@ class Coordinator:
             analyser_dict = {} # cache analysers so that if we have to rerun a component we don't have to rebuild the cfg
             for component in bus.components:
 
-                mcsa = analyser_dict.get(component.name, MCSAnalyser(component)) # Runs in unconstrained mode because the Components have expected input = 0
+                mcsa = analyser_dict.get(component.name, ComponentAnalyser(component)) # Runs in unconstrained mode because the Components have expected input = 0
                 mcsa.analyse()
                 if step_mode:
                     cls._visualize(bus, step_mode)
@@ -49,7 +53,7 @@ class Coordinator:
                     if not component.is_analysed:
                         if cls._can_analyse(component, bus):
                             made_progress = True
-                            mcsa = analyser_dict.get(component.name, MCSAnalyser(component))
+                            mcsa = analyser_dict.get(component.name, ComponentAnalyser(component))
                             mcsa.analyse()
                             component.is_analysed = True
                             if step_mode:
@@ -57,8 +61,11 @@ class Coordinator:
                 if not made_progress:
                     break
 
+            for msg_id in bus.buffer.keys():
+                MessageTracer.print_trace(msg_id)
+
             cls._visualize(bus, False)
-            print(f"Done! See http://{cls.vc.host}:{cls.vc.port} for results")
+            print(f"Done!")
 
 
     @classmethod
@@ -92,13 +99,13 @@ class Coordinator:
         ]
 
         # Generate more colors than needed to have options
-        colors_rgb = distinctipy.get_colors(len(msg_type_strs) + 10, exclude_colors=exclude_colors)
+        colors_rgb = get_colors(len(msg_type_strs) + 10, exclude_colors=exclude_colors)
 
         # Convert to pastel by adjusting saturation and lightness
         pastel_colors = []
         for r, g, b in colors_rgb:
             # Convert RGB to HSL
-            h, l, s = colorsys.rgb_to_hls(r, g, b)
+            h, l, s = rgb_to_hls(r, g, b)
 
             # Make more pastel:
             # - Reduce saturation (multiply by 0.6-0.7 for softer colors)
@@ -107,7 +114,7 @@ class Coordinator:
             l = 0.4 + (l * 0.3)  # Push lightness toward 60-90% range
 
             # Convert back to RGB
-            r, g, b = colorsys.hls_to_rgb(h, l, s)
+            r, g, b = hls_to_rgb(h, l, s)
 
             # Skip if too grey (when r, g, b are too similar)
             if max(r, g, b) - min(r, g, b) > 0.1:  # Ensure some color variation
@@ -123,7 +130,6 @@ class Coordinator:
 
     @classmethod
     def _visualize(cls, bus, step_mode=False):
-        print(cls.type_color_map)
         for node, cid in bus.graph.nodes(data='cid'):
             c = bus.components[cid]
             if len(c.subscriptions) == 0:

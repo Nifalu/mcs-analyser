@@ -1,11 +1,9 @@
 import re
 import angr
-from abc import \
-    abstractmethod, \
-    ABC
+from abc import abstractmethod, ABC
 
-from analyser.input_tracker import InputTracker
-from utils.logger import logger
+from analyser.io import InputTracker
+from analyser.utils import logger
 log = logger(__name__)
 
 class InputHookBase(angr.SimProcedure, ABC):

@@ -1,13 +1,11 @@
-from abc import ABC, abstractmethod
 import angr
 import re
+import claripy
 from typing import Optional
-import logging
+from abc import ABC, abstractmethod
 
-import \
-    claripy
-
-log = logging.getLogger(__name__)
+from analyser.utils import logger
+log = logger(__name__)
 
 
 class OutputFunctionParser(ABC):

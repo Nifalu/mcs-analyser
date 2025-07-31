@@ -1,19 +1,20 @@
-from analyser.config import Config
-from analyser.io_state import IOState
+from analyser.utils import Config, logger
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from analyser.io import IOState
 
-from utils.logger import logger
 log = logger(__name__)
 
 class Message:
-    def __init__(self,producer_component_name: str, msg_id: IOState, msg_data: IOState):
+    def __init__(self,producer_component_name: str, msg_id: 'IOState', msg_data: 'IOState'):
         if msg_id.is_symbolic():
             log.warning(f"{producer_component_name} produced a message of symbolic type")
             self.msg_type_str = "symbolic"
         else:
             self.msg_type_str = Config.message_name_lookup.get(msg_id.bv.concrete_value, str(msg_id.bv.concrete_value))
         self.producer_component_name: str = producer_component_name
-        self.msg_type: IOState = msg_id
-        self.msg_data: IOState = msg_data
+        self.msg_type: 'IOState' = msg_id
+        self.msg_data: 'IOState' = msg_data
 
     def __hash__(self):
         return hash((self.producer_component_name, self.msg_type, self.msg_data))

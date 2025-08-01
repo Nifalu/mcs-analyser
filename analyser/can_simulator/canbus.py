@@ -112,7 +112,8 @@ class CANBus:
                 msg_type_constraints=str(consumed_msg.msg_type.constraints),
                 msg_data_bv=str(consumed_msg.msg_data.bv),
                 msg_data_constraints=str(consumed_msg.msg_data.constraints),
-                msg_id = consumed_msg_id
+                msg_id = consumed_msg_id,
+                from_unconstrained_run = consumed_msg.from_unconstrained_run
             )
             log.debug(f"Added edge between {[source]} -> {[target]} with message of type {[consumed_msg.msg_type_str]}")
 

@@ -16,7 +16,7 @@ class ComponentAnalyser:
 
     def __init__(self, component: Component):
         self.component: Component = component
-
+        self.is_unconstrained_run = False
         self.output_addrs = None
         self.output_checker = None
 
@@ -43,9 +43,11 @@ class ComponentAnalyser:
 
         if self.component.max_expected_inputs == 0:
             # Run in unconstrained mode to figure out how many inputs this component needs
+            self.is_unconstrained_run = True
             InputTracker.new(self.component.name)
             self._run_analysis(entry_points)
         else:
+            self.is_unconstrained_run = False
             self.current_input_combinations = self._generate_input_combinations(length=self.component.max_expected_inputs)
             for i, combination in enumerate(self.current_input_combinations):
                 InputTracker.new(self.component.name, combination)
@@ -93,6 +95,8 @@ class ComponentAnalyser:
             result: Message | None = self.output_checker.check(state, self.output_addrs.keys())
             if result is not None:
                 self.component.update_max_expected_inputs(InputTracker.max_inputs_counted)
+                if self.is_unconstrained_run and len(self.component.subscriptions) > 0:
+                    result.from_unconstrained_run = True
                 if result.msg_type.is_symbolic():
                     log.warning(f"{self.component.name} produced a symbolic msg_id {result.msg_type}")
                 else:

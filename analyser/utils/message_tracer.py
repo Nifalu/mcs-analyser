@@ -40,71 +40,73 @@ class MessageTracer:
         log.debug(f"Recorded production #{production['production_id']}: {producer_name} produced msg {produced_msg_id} from inputs {production['consumed_msg_ids']}")
 
     @classmethod
-    def get_full_trace(cls, msg_id: int) -> list[list[int]]:
-        """Get all paths from source messages to this message as lists of msg_ids"""
+    def get_full_trace(cls, msg_id: int) -> list[list[tuple[int, str | None, list[int]]]]:
+        """
+        Get all paths with edge information.
+        Returns list of paths where each element is (msg_id, producer_component, [consumed_msg_ids])
+        """
 
-        def get_paths_to(target_id: int) -> list[list[int]]:
-            """Recursively build paths to target_id"""
-            # get all possible ways how this message was produced.
+        def get_paths_to(target_id: int) -> list[list[tuple[int, str | None, list[int]]]]:
+            """Recursively build paths to target_id with edge info"""
             producers = cls._producers_of.get(target_id, [])
 
             if not producers:
-                # This is a source message - return a path with just itself
-                return [[target_id]]
+                # Source message - no inputs consumed
+                return [[(target_id, None, [])]]
 
             all_paths = []
 
-            # Each producer represents one way to create this message (OR relationship)
             for prod in producers:
-                if not prod['consumed_msg_ids']:
-                    # No inputs but has a producer (shouldn't normally happen)
-                    all_paths.append([target_id])
-                elif len(prod['consumed_msg_ids']) == 1:
-                    # Single input - extend each path from that input
-                    input_id = prod['consumed_msg_ids'][0]
+                producer_component = prod['component']
+                consumed_ids = prod['consumed_msg_ids']
+
+                if not consumed_ids:
+                    # No inputs but has a producer (source component)
+                    all_paths.append([(target_id, producer_component, [])])
+                elif len(consumed_ids) == 1:
+                    # Single input
+                    input_id = consumed_ids[0]
                     input_paths = get_paths_to(input_id)
                     for path in input_paths:
-                        # Add current message to the end of each input path
-                        all_paths.append(path + [target_id])
+                        # Add current message with what it consumed
+                        all_paths.append(path + [(target_id, producer_component, consumed_ids)])
                 else:
-                    # Multiple inputs (AND relationship) - combine all inputs
-                    # First, collect all unique source messages from all inputs
-                    all_sources = set()
-                    for input_id in prod['consumed_msg_ids']:
-                        input_paths = get_paths_to(input_id)
-                        for path in input_paths:
-                            # Add all messages except the input itself (to avoid duplicates)
-                            all_sources.update(path[:-1])
+                    # Multiple inputs - need to get all paths for all inputs
+                    all_input_paths = []
+                    for input_id in consumed_ids:
+                        all_input_paths.extend(get_paths_to(input_id))
 
-                    # Create a single path with all sources, then the inputs, then target
-                    combined_path = sorted(list(all_sources))  # Sort for consistent ordering
-                    combined_path.extend(prod['consumed_msg_ids'])  # Add the immediate inputs
-                    combined_path.append(target_id)  # Add the target
-
-                    # Remove duplicates while preserving order
+                    # Combine unique entries from all input paths
+                    combined = []
                     seen = set()
-                    deduped_path = []
-                    for msg in combined_path:
-                        if msg not in seen:
-                            seen.add(msg)
-                            deduped_path.append(msg)
+                    for path in all_input_paths:
+                        for entry in path:
+                            key = (entry[0], entry[1])  # (msg_id, component)
+                            if key not in seen:
+                                seen.add(key)
+                                combined.append(entry)
 
-                    all_paths.append(deduped_path)
+                    # Add current message
+                    combined.append((target_id, producer_component, consumed_ids))
+                    all_paths.append(combined)
 
             return all_paths
 
         return get_paths_to(msg_id)
 
     @classmethod
-    def get_all_traces(cls, msg_ids: set[int]) -> dict[int, list[list[int]]]:
-        """Get traces for all messages as a dictionary mapping msg_id to paths"""
-        all_traces = {}
-
-        # Build traces for each message
-        for msg_id in sorted(msg_ids):
-            all_traces[msg_id] = cls.get_full_trace(msg_id)
-
-        return all_traces
+    def get_traces_dict(cls, keys: list[int]) -> dict[str, list[list[tuple]]]:
+        """Get traces with edge information for visualization"""
+        traces = {}
+        for msg_id in keys:
+            paths = cls.get_full_trace(msg_id)
+            if paths:
+                # Convert to JSON-serializable format
+                traces[str(msg_id)] = [
+                    [[msg_id, component, consumed_ids] for msg_id, component, consumed_ids in path]
+                    for path in paths
+                ]
+        return traces
 
     @classmethod
     def print_trace(cls, msg_id: int):

@@ -72,8 +72,7 @@ class CANBus:
             produced_msg_id = cls.buffer.add(produced_msg)
             consumed_msgs_ids = [cls.buffer.get_id(m) for m in consumed_msgs]
 
-            if consumed_msgs_ids:
-                MessageTracer.add_production(produced_msg_id, consumed_msgs_ids, target)
+            MessageTracer.add_production(produced_msg_id, consumed_msgs_ids, target)
 
             if is_new_message:
                 log.info(f"{[produced_msg.producer_component_name]} produced a new message: {produced_msg}")

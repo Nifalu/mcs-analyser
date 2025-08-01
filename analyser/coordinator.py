@@ -61,7 +61,7 @@ class Coordinator:
                 if not made_progress:
                     break
 
-            cls._visualize(bus, step_mode=False, tracing=False)
+            cls._visualize(bus, step_mode=False, tracing=True)
             print(f"Done!")
 
 
@@ -127,8 +127,14 @@ class Coordinator:
 
     @classmethod
     def _visualize(cls, bus, step_mode=False, tracing=True):
+        traces = None
         if tracing:
-            traces = MessageTracer.get_all_traces(bus.keys())
+            traces = MessageTracer.get_traces_dict(bus.buffer.keys())
+
+            for msg_id, trace in traces.items():
+                for path in trace:
+                    print(f"{msg_id} -> {path}")
+
 
         for node, cid in bus.graph.nodes(data='cid'):
             c = bus.components[cid]
@@ -148,7 +154,7 @@ class Coordinator:
         cls.vc.send_graph(
             bus.graph,
             title="MCS Data Flow",
-            #traces=traces We need to support this in the visualisation
+            traces=traces
         )
 
         if step_mode:

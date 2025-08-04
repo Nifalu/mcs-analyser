@@ -1,9 +1,26 @@
-from analyser.utils import Config, logger, IOState
+from analyser.common import Config, logger, IOState
 
 log = logger(__name__)
 
 class Message:
     def __init__(self,producer_component_name: str, msg_id: 'IOState', msg_data: 'IOState', from_unconstrained_run: bool = False):
+        """
+        A `Message` is simply a container used to transfer data between `Components`. It holds a a `msg_id` and `msg_data` and
+        therefore inherently defines the communication protocol used by the `Components`. In this case, each Message must have an id
+        representing its type followed by some data.
+
+        It also holds some metadata which is not part of the protocol but needed for tracking and visualisation.
+
+        Note:
+        A `Message` is hashable and comes with an `__eq__` method in order to work with sets. However this equality depends
+        on the equality of `IOState` which might not always be 100% correct. More on this on `IOState`
+
+        :param producer_component_name: The display name of the component that produced this message
+        :param msg_id: The id of the message:
+        :param msg_data: The data of the message:
+        :param from_unconstrained_run: A simple flag determining whether this message was produced during an unconstrained run
+        """
+
         if msg_id.is_symbolic():
             log.warning(f"{producer_component_name} produced a message of symbolic type")
             self.msg_type_str = "symbolic"

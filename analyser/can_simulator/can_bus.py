@@ -1,23 +1,42 @@
 from json import load
 from pathlib import Path
 
-import angr
-from networkx import MultiDiGraph
+from analyser.can_simulator.can_graph import CANGraph
+from analyser.can_simulator.can_component import Component
+from analyser.can_simulator.can_message import Message
+from analyser.common import Config, IndexedSet, MessageTracer, logger, utils
 
-from analyser.can_simulator.component import Component
-from analyser.can_simulator.message import Message
-from analyser.utils import Config, IndexedSet, MessageTracer, logger
 log = logger(__name__)
 
 class CANBus:
+    """
+    The `CANBus` class offers functionality similar to a CAN bus. It consists of a buffer holding all the `Messages`
+    currently on the bus as well as all the `Components` participating.
+
+    Note: Messages never disappear in this implementation and remain in the buffer forever.
+
+    Since the `CANBus` has an essential role within the Analyser it is implemented `statically` in order
+    to eliminate the need of passing instances to all the time and avoiding circular dependencies.
+    """
     components: IndexedSet[Component] = IndexedSet()
     buffer: IndexedSet[Message] = IndexedSet()
     msg_types_in_buffer: dict[int, int] = dict() # count which and how many msg_types we have
-    graph = MultiDiGraph()
+    graph = CANGraph()
     _initialized: bool = False
+
 
     @classmethod
     def init(cls, path: Path = Path.cwd() / "config.json"):
+        """
+        Initialize the `CANBus` with a configuration file containing basic information about the components
+        participating on this `CANBus`.
+
+        This also initialises the `Config` describing which IO functions are used to write to this bus
+        (and therefore need to be hooked) as well how long the msg_ids and msg_data sections are.
+
+        :param path:
+        :return:
+        """
         if cls._initialized:
             log.warning(f"CANBus.init() called twice... already initialized")
             return
@@ -28,38 +47,44 @@ class CANBus:
         symbols = None
         for comp in data['components']:
             component = Component(
-                name=comp['name'],
+                name=comp.get('name', comp['filename']),
                 path=Path(components_dir, comp['filename']),
             )
-            cls._register(component, comp['description'])
+
+            cid = cls.components.add(component)
+            cls.graph.add_component(component.name, cid=cid, description=comp.get('description', ""))
 
             if not symbols:
-                symbols = cls.extract_msg_id_map(component.path, prefix="MSG_")
+                symbols = utils.extract_msg_id_map(component.path, prefix=data.get('msg_id_prefix', 'MSG_'))
 
         Config.init(data['var_length'],
             data['input_hooks'],
             data['output_hooks'],
+            data.get('msg_id_prefix', 'MSG_'),
             symbols
         )
 
         cls._initialized = True
 
-    @classmethod
-    def _register(cls, component: Component, description: str):
-        cid = cls.components.add(component)
-        cls.graph.add_node(component.name, cid=cid, description=description)
 
     @classmethod
-    def write(cls, produced_msg: Message = None, consumed_msgs: set[Message] = None, producer_name: str = None):
+    def write(cls, produced_msg: Message = None, consumed_msgs: set[Message] = None):
+        """
+        Writes a produced `Message` to the buffer if no identical message is already in it.
+
+        :param produced_msg: The `Message` to be written to the buffer.
+        :param consumed_msgs: Set of `Messages` from which the produced_msg was produced. Can be None!
+        :return:
+        """
         if not cls._initialized:
             log.error(f"Writing to an uninitialized CAN bus...")
             return
 
-        if not produced_msg and not producer_name:
+        if not produced_msg:
             log.error(f"Got a message with no sender name")
             return
 
-        target = producer_name or produced_msg.producer_component_name
+        target = produced_msg.producer_component_name
 
         if produced_msg:
             if produced_msg.msg_type.is_symbolic():
@@ -82,70 +107,49 @@ class CANBus:
                     cls.msg_types_in_buffer[produced_msg_type] = 1
 
                 for component in cls.components:
-                    if produced_msg_type in component.subscriptions:
+                    if produced_msg_type in component.consumed_ids:
                         log.info(f"Reopening [{target}] to handle a new message: {produced_msg}")
                         component.is_analysed = False # reopen this component as we got a new message for it.
 
             else:
                 log.debug(f"{[produced_msg]} already in buffer")
 
+        cls.update_graph(target, consumed_msgs)
 
+
+    @classmethod
+    def update_graph(cls, target, consumed_msgs):
+        """
+        Update the CANGraph with new edges from the consumed message sources to the target component
+
+        :param target: The component the edge should point to
+        :param consumed_msgs: The messages holding the edge information.
+        :return:
+        """
         for consumed_msg in consumed_msgs:
-            continue_outer = False
             consumed_msg_id = cls.buffer.get_id(consumed_msg)
             source = consumed_msg.producer_component_name
-            edge_dict = cls.graph.get_edge_data(source, target)
-            if edge_dict:
-                for key, edge in edge_dict.items():
-                    if consumed_msg_id == edge['msg_id']:
-                        log.info(f"Message from ({[source]}->{[target]}) is already in the graph")
-                        continue_outer = True
-                        break
-            if continue_outer:
-                continue
 
-            cls.graph.add_edge(
-                source,
-                target,
-                type=consumed_msg.msg_type_str,
-                msg_type_bv=str(consumed_msg.msg_type.bv),
-                msg_type_constraints=str(consumed_msg.msg_type.constraints),
-                msg_data_bv=str(consumed_msg.msg_data.bv),
-                msg_data_constraints=str(consumed_msg.msg_data.constraints),
-                msg_id = consumed_msg_id,
-                from_unconstrained_run = consumed_msg.from_unconstrained_run
-            )
+            message_data = {
+                'type': consumed_msg.msg_type_str,
+                'msg_type_bv': str(consumed_msg.msg_type.bv),
+                'msg_type_constraints': str(consumed_msg.msg_type.constraints),
+                'msg_data_bv': str(consumed_msg.msg_data.bv),
+                'msg_data_constraints': str(consumed_msg.msg_data.constraints),
+                'msg_id': consumed_msg_id,
+                'from_unconstrained_run': consumed_msg.from_unconstrained_run
+            }
+
+            cls.graph.add_message_edge(source, target, message_data)
             log.debug(f"Added edge between {[source]} -> {[target]} with message of type {[consumed_msg.msg_type_str]}")
 
-    @staticmethod
-    def extract_msg_id_map(binary_path, prefix) -> dict[int, str]:
-        try:
-            proj = angr.Project(binary_path, auto_load_libs=False)
-        except Exception as e:
-            log.error(f"Error loading binary: {e} during symbol extraction")
-            return {}
-
-        log.debug(f"Loaded binary: {binary_path}")
-
-        results = {}
-
-        for symbol in proj.loader.main_object.symbols:
-            if not symbol.name:
-                continue
-
-            # Check if symbol starts with prefix (with or without underscore)
-            clean_name = symbol.name.lstrip('_')
-            if clean_name.startswith(prefix):
-                if hasattr(symbol, 'size') and symbol.size > 0:
-                    value = proj.loader.memory.unpack_word(symbol.rebased_addr, size=8)
-                    log.info(f"Extracted {clean_name} = {value} (0x{value:x})")  # Print both decimal and hex
-                    if value in results:
-                        raise(ValueError(f"Multiple Message ID's with the same name detected: {value}"))
-                    results[value] = clean_name
-        return results
 
     @classmethod
     def close(cls):
+        """
+        Close the CANBus, essentially resetting everything.
+        :return:
+        """
         cls.components.clear()
         cls.buffer.clear()
         cls.msg_types_in_buffer.clear()
@@ -153,36 +157,58 @@ class CANBus:
         cls.config = Config()
         cls._initialized = False
 
+
     @classmethod
     def read_all_msgs_of_types(cls, types: set[int]) -> set[Message]:
+        """
+        Get all messages with a set of ids (types).
+        :param types:
+        :return:
+        """
         result_set = set()
         for msg in cls.buffer:
             if msg.msg_type.bv.concrete_value in types:
                 result_set.add(msg)
         return result_set
 
+
     @classmethod
     def number_of_msgs_of_types(cls, types: set[int]) -> int:
+        """
+        Get the number of messages with a set of ids (types).
+        :param types:
+        :return:
+        """
         total = 0
         for t in types:
             total += cls.msg_types_in_buffer.get(t, 0)
         return total
 
+
     @classmethod
     def display(cls):
+        """
+        Helper method to display the the CANBus configuration in a somewhat readable way.
+        :return:
+        """
         s = "-- CAN-Bus -- \n components:\n"
         for cid, component in cls.components.items():
             s += f" - {component} ({cid})\n"
         return s
 
+
     @classmethod
     def __enter__(cls):
+        """ Allows the use of `with` statement. """
         if not cls._initialized:
             cls.init()
         return cls
 
+
     @classmethod
     def __exit__(cls, exc_type, exc_val, exc_tb):
+        """ Allows the use of `with` statement. """
+        cls.close()
         return False
 
     def __repr__(self):

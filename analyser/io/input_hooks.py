@@ -1,10 +1,18 @@
+"""
+This module provides functionality to define and register InputHooks to be used during the analysis.
+A InputHook must provide a list of input function it can handle/support as well the actual code that should
+be run when hooked.
+"""
+
 import re
 import angr
 from abc import abstractmethod, ABC
 
 from analyser.io.input_tracker import InputTracker
-from analyser.utils import logger
+from analyser.common import logger
 log = logger(__name__)
+
+
 
 class InputHookBase(angr.SimProcedure, ABC):
     """Base class for input function hooks"""
@@ -22,6 +30,7 @@ class InputHookBase(angr.SimProcedure, ABC):
     def can_handle(cls) -> list[str]:
         """Returns a list of function names this hook can handle"""
         pass
+
 
 
 class ScanfHook(InputHookBase):
@@ -62,8 +71,13 @@ class ScanfHook(InputHookBase):
 
         return
 
+
+
 class InputHookRegistry:
-    """Registry to manage input function hooks"""
+    """
+    The InputHookRegistry allows for the analyser to dynamically
+    find the right InputHook for the function it wants to hook.
+    """
     prefixes = ['__isoc99_', '__isoc23_', '__', '_']
     suffixes = ['_chk', '@plt', '_s']
 
@@ -75,21 +89,27 @@ class InputHookRegistry:
 
 
     def _register_default_hooks(self):
+        """
+        Register default hooks to be used.
+
+        Use `register_hook()` to register additional hooks.
+        :return:
+        """
         default_hooks = [
             ScanfHook
         ]
         for hook_class in default_hooks:
             self.register_hook(hook_class)
 
-    @classmethod
-    def register_prefix(cls, prefix: str):
-        cls.prefixes.append(prefix)
-
-    @classmethod
-    def register_suffix(cls, suffix: str):
-        cls.suffixes.append(suffix)
 
     def register_hook(self, hook_class):
+        """
+        Register a new hook.
+
+        Note: Overwrites any previously registered hook for a specific function.
+        :param hook_class:
+        :return:
+        """
         if not issubclass(hook_class, InputHookBase):
             raise ValueError(f"{hook_class} must be a subclass of InputHookBase")
 
@@ -102,30 +122,14 @@ class InputHookRegistry:
                 log.debug(f"Registering hook for '{func_name}': {hook_class.__name__}")
             self.hook_map[func_name] = hook_class
 
-    @classmethod
-    def normalize_function_name(cls, func_name: str) -> str:
-        """Strip common prefixes/suffixes to get base function name"""
-        if not func_name:
-            return func_name
-
-        normalized = func_name
-
-        # Strip prefixes
-        for prefix in cls.prefixes:
-            if normalized.startswith(prefix):
-                normalized = normalized[len(prefix):]
-                break
-
-        # Strip suffixes
-        for suffix in cls.suffixes:
-            if normalized.endswith(suffix):
-                normalized = normalized[:-len(suffix)]
-                break
-
-        return normalized
 
     def get_hook_class(self, func_name: str):
-        """Get the appropriate hook class for a function"""
+        """
+        Get the appropriate hook class for the given function name.
+
+        :param func_name:
+        :return: the hook class for the given function name.
+        """
         # First try exact match
         hook_class = self.hook_map.get(func_name)
         if hook_class:
@@ -146,10 +150,67 @@ class InputHookRegistry:
         return None
 
     def create_hook(self, func_name: str):
-        """Create a hook instance for the given function"""
+        """
+        Create a hook class for the given function name.
+
+        :param func_name:
+        :return: an instance of the hook class
+        """
         hook_class = self.get_hook_class(func_name)
         if hook_class:
             return hook_class()
         else:
             log.error(f"Could not create hook for '{func_name}'")
             raise Exception(f"Could not find a hook for '{func_name}'")
+
+
+    @classmethod
+    def register_prefix(cls, prefix: str):
+        """
+        Register additional function prefixes.
+
+        Sometimes the compiler renames functions. Example: printf -> __isoc99_printf
+        If you expect your binary to have a certain function but the analyser can't find it, check if it was
+        renamed and register this additional prefix here.
+        :param prefix:
+        :return:
+        """
+        cls.prefixes.append(prefix)
+
+
+    @classmethod
+    def register_suffix(cls, suffix: str):
+        """
+        Register additional function suffixes. See `register_prefix()`.
+        :param suffix:
+        :return:
+        """
+        cls.suffixes.append(suffix)
+
+
+    @classmethod
+    def normalize_function_name(cls, func_name: str) -> str:
+        """
+        Strip prefix and suffix from the function name in order to retrieve the base name.
+
+        :param func_name:
+        :return:
+        """
+        if not func_name:
+            return func_name
+
+        normalized = func_name
+
+        # Strip prefixes
+        for prefix in cls.prefixes:
+            if normalized.startswith(prefix):
+                normalized = normalized[len(prefix):]
+                break
+
+        # Strip suffixes
+        for suffix in cls.suffixes:
+            if normalized.endswith(suffix):
+                normalized = normalized[:-len(suffix)]
+                break
+
+        return normalized

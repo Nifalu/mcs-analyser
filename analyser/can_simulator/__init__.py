@@ -1,3 +1,7 @@
+"""
+This sub-package contains functionality to simulate and model CAN bus communications.
+"""
+
 from .can_component import Component
 from .can_message import Message
 from .can_bus import CANBus

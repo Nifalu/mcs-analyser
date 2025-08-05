@@ -26,8 +26,9 @@ def set_project_log_level(level: int):
     logging.getLogger().setLevel(level)
 
 
-def logger(name: str, level=_PROJECT_LOG_LEVEL) -> logging.Logger:
+def logger(name: str, level=None) -> logging.Logger:
     """Return a logger with project-level default log level."""
     log = logging.getLogger(name)
-    log.setLevel(level)
+    if level is not None:
+        log.setLevel(level)
     return log

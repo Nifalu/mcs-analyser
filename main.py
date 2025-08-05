@@ -1,4 +1,4 @@
-from analyser.utils import logger, set_project_log_level, set_dependency_log_level
+from analyser.common.logger import logger, set_project_log_level, set_dependency_log_level
 from logging import DEBUG, INFO, WARNING, ERROR
 
 log = logger(__name__)

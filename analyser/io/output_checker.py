@@ -4,24 +4,35 @@ import re
 from analyser.can_simulator import Component, Message
 from analyser.io.input_tracker import InputTracker
 from analyser.io.output_parser import OutputParserRegistry, OutputFunctionParser
-from analyser.utils import logger, IOState
+from analyser.common import logger, IOState
 log = logger(__name__)
 
 
 class OutputChecker:
-    """Main class for checking output function calls"""
+    """
+    The `OutputChecker` is a middle layer between the component analyser and the `OutputParserRegistry`.
+    Its main functionality comes from the `check()` function which checks if a given `angr.SimState` is an
+    output function we're tracking. If so, it gets the correct parser for the type of output function and hands over
+    to this parser.
+
+    The `check()` function can be used as part of an `action` within an angr breakpoint and for example be called
+    everytime before a 'call' within the simulation.
+    """
 
     def __init__(self, component: Component):
         self.component = component
         self.parser_registry = OutputParserRegistry()
 
+
     def register_output_function(self, addr: int, name: str):
         """Register a known output function"""
         self.parser_registry.register_function(addr, name)
 
+
     def register_parser(self, parser: OutputFunctionParser):
         """Register a custom parser"""
         self.parser_registry.register_parser(parser)
+
 
     def check(self, state: angr.SimState, output_func_addrs: list[int]) -> Message | None:
         """
@@ -55,18 +66,24 @@ class OutputChecker:
         msg_type: IOState = IOState.from_state(args[0], state.copy())
         msg_data: IOState = IOState.from_state(args[1], state.copy())
 
-        if msg_data.is_symbolic():
-            msg_data.set_label('symbolic' if msg_data.constraints else 'unconstrained')
-        else:
-            msg_data.set_label('concrete')
-
         if InputTracker.yield_unconstrained:
-            self.extract_subscriptions(self.component, state)
+            self.extract_consumed_ids(self.component, state)
 
         return Message(self.component.name, msg_type, msg_data)
 
+
     @staticmethod
-    def extract_subscriptions(component: Component, state: angr.SimState):
+    def extract_consumed_ids(component: Component, state: angr.SimState):
+        """
+        Try to extract the constraints placed on the input variables and determine if they are
+        constrained to a concrete value. Since angr internals sometimes create new variables instead of
+        adding constraints to the original one, we have to dynamically look for variables that contain the
+        name of a original input and then determine if those are constrained.
+
+        :param component: The component we're working with.
+        :param state: The SimState to extract information from.
+        :return:
+        """
         number_of_inputs = InputTracker.input_counter
 
         if number_of_inputs == 0:
@@ -123,11 +140,7 @@ def setup_output_checker(component: Component, output_addrs) -> OutputChecker:
     checker = OutputChecker(component)
 
     for addr, name in output_addrs.items():
-        try:
-            # Try to resolve function address from PLT
-            checker.register_output_function(addr, name)
-            log.debug(f"Registered {name} at {hex(addr)}")
-        except:
-            log.warning(f"Could not find an output parser for {name}")
+        checker.register_output_function(addr, name)
+        log.debug(f"Registered {name} at {hex(addr)}")
 
     return checker

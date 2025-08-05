@@ -1,4 +1,10 @@
+import \
+    itertools
 from itertools import product, permutations
+from typing import \
+    Generator
+
+import claripy.ast.bv as bv_module
 from math import factorial
 from analyser.can_simulator import Message, CANBus, Component
 from analyser.common import logger, IOState
@@ -12,6 +18,8 @@ class InputTracker:
     enumerator = None
     yield_unconstrained = False
 
+    input_combinations:  Generator[tuple[Message, ...], None, None] = None
+
     max_inputs_counted = 0
     input_counter = 0
 
@@ -21,11 +29,10 @@ class InputTracker:
 
 
     @classmethod
-    def new(cls, component: Component, input_combination: tuple[Message, ...] = None):
+    def new(cls, component: Component):
         """
         Prepare (reset) the tracker for a new combination or component.
         :param component:
-        :param input_combination:
         :return:
         """
         if cls.component is not None and cls.component.name != component.name:
@@ -36,16 +43,32 @@ class InputTracker:
         cls.flattened_with_context.clear()
 
         cls.input_counter = 0
+        # To ensure deterministic variable namings over multiple runs
+        # without resetting the angr.project we have to reset the var_counter manually.
+        bv_module.var_counter = itertools.count()
 
-        if input_combination:
-            cls.yield_unconstrained = False # We've got input
-            for msg in input_combination:
-                cls.flattened_with_context.append(msg)
-                cls.flattened_with_context.append(msg)
-        else:
+        if cls.component.max_expected_inputs == 0:
             cls.yield_unconstrained = True
+        else:
+            cls.yield_unconstrained = False # We've got input
+            cls.input_combinations = cls.generate_input_combinations()
 
-        cls.enumerator = enumerate(cls.flattened_with_context)
+
+    @classmethod
+    def has_next_combination(cls):
+        try:
+            combination = next(cls.input_combinations)
+            cls.soft_reset()
+            cls.flattened_with_context.clear()
+            for msg in combination:
+                cls.flattened_with_context.append(msg)
+                cls.flattened_with_context.append(msg)
+
+            cls.enumerator = enumerate(cls.flattened_with_context)
+            return True
+        except StopIteration:
+            return False
+
 
     @classmethod
     def soft_reset(cls):
@@ -54,7 +77,9 @@ class InputTracker:
         """
         cls.enumerator = enumerate(cls.flattened_with_context)
         cls.input_counter = 0
+        bv_module.var_counter = itertools.count()
         cls.consumed_messages.clear()
+
 
     @classmethod
     def get_next_input(cls) -> IOState:
@@ -82,6 +107,7 @@ class InputTracker:
             # the number of unconstrained inputs consumed by this component in an earlier phase.
             raise StopIteration(f"{cls.component.name} requested more inputs than available...")
 
+
     @classmethod
     def get_consumed_messages(cls) -> set[Message]:
         """
@@ -92,13 +118,12 @@ class InputTracker:
 
 
     @classmethod
-    def generate_input_combinations(cls, allow_repetition=False, length=None, warn_threshold=100):
+    def generate_input_combinations(cls, allow_repetition=False, warn_threshold=100):
         """
         Lazily generates all possible permutations of the inputs.
 
         Args:
             allow_repetition: Whether to allow selecting the same input multiple times (default: False)
-            length: Length of permutations to generate (default: len(inputs))
             warn_threshold: Number of combinations above which to log.debug a warning
 
         Yields:
@@ -113,8 +138,9 @@ class InputTracker:
         for msg in inputs:
             log.debug(f"  {msg}")
 
+        length = cls.component.max_expected_inputs // 2
         n = len(inputs)
-        k = length//2 if length is not None else n
+        k = length if length is not None else n
 
         # Validate
         if not allow_repetition and k > n:
@@ -126,10 +152,10 @@ class InputTracker:
         else:
             total_combinations = factorial(n) // factorial(n - k)
 
-        log.info(f"Generated {total_combinations} input combinations of length {length} to analyze")
+        log.info(f"Generated {total_combinations} message combinations of length {length} to analyze")
 
         if total_combinations > warn_threshold:
-            log.warning(f"Large number of input combinations to check: {total_combinations:,} combinations!")
+            log.warning(f"Large number of message combinations to check: {total_combinations:,} combinations!")
 
         # Generate permutations
         if allow_repetition:

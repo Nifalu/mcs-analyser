@@ -85,8 +85,6 @@ class InputHookRegistry:
         self.hook_map = {}
         self._register_default_hooks()
 
-        # Common prefixes/suffixes to strip
-
 
     def _register_default_hooks(self):
         """

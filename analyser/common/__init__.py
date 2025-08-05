@@ -2,7 +2,7 @@
 This sub-package contains many helper classes and functions that are used throughout the analyser.
 """
 
-from .logger import logger, set_project_log_level, set_dependency_log_level
+from analyser.common.logger import logger, set_project_log_level, set_dependency_log_level
 from .config import Config
 from .indexed_set import IndexedSet
 from .message_tracer import MessageTracer

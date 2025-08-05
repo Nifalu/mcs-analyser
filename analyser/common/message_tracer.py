@@ -1,3 +1,6 @@
+from typing import \
+    Iterator
+
 from analyser.common.logger import logger
 log = logger(__name__)
 
@@ -5,7 +8,7 @@ class MessageTracer:
     """
     The `MessageTracer` keeps track of which messages(s) produce which other messages
     in order to provide "trace" information for the visualisation. It runs in addition
-    to the `CANGraph` but does no deduplication.
+    to the `MCSGraph` but does no deduplication.
     """
     _producers_of: dict[int, list[dict]] = dict()
     _consumers_of: dict[int, list[dict]] = dict()
@@ -109,7 +112,7 @@ class MessageTracer:
 
 
     @classmethod
-    def get_traces_dict(cls, msg_ids: list[int]) -> dict[str, list[list[tuple]]]:
+    def get_traces_dict(cls, msg_ids: Iterator[int]) -> dict[str, list[list[tuple]]]:
         """
         Get a dict mapping all passed msg_ids to their traces.
 
@@ -126,13 +129,3 @@ class MessageTracer:
                     for path in paths
                 ]
         return traces
-
-
-    @classmethod
-    def print_trace(cls, msg_id: int):
-        """Print a simple trace for a message"""
-        paths = cls.get_full_trace(msg_id)
-
-        print(f"\nTrace for msg_id {msg_id}:")
-        for path in paths:
-            print(f"\t{path}")

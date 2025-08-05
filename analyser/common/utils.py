@@ -33,7 +33,7 @@ def extract_msg_id_map(binary_path, prefix) -> dict[int, str]:
         if clean_name.startswith(prefix):
             if hasattr(symbol, 'size') and symbol.size > 0:
                 value = proj.loader.memory.unpack_word(symbol.rebased_addr, size=8)
-                log.info(f"Extracted {clean_name} = {value} (0x{value:x})") 
+                log.info(f"Extracted {clean_name} = {value} (0x{value:x})")
                 if value in results:
                     raise(ValueError(f"Multiple Message ID's with the same name detected: {value}"))
                 results[value] = clean_name

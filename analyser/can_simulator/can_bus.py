@@ -1,7 +1,6 @@
 from json import load
 from pathlib import Path
-
-from analyser.can_simulator.can_graph import CANGraph
+from analyser.mcs_graph import MCSGraph
 from analyser.can_simulator.can_component import Component
 from analyser.can_simulator.can_message import Message
 from analyser.common import Config, IndexedSet, MessageTracer, logger, utils
@@ -21,14 +20,13 @@ class CANBus:
     components: IndexedSet[Component] = IndexedSet()
     buffer: IndexedSet[Message] = IndexedSet()
     msg_types_in_buffer: dict[int, int] = dict() # count which and how many msg_types we have
-    graph = CANGraph()
     _initialized: bool = False
 
 
     @classmethod
     def init(cls, path: Path = Path.cwd() / "config.json"):
         """
-        Initialize the `CANBus` with a configuration file containing basic information about the components
+        Initialise the `CANBus` with a configuration file containing basic information about the components
         participating on this `CANBus`.
 
         This also initialises the `Config` describing which IO functions are used to write to this bus
@@ -52,7 +50,7 @@ class CANBus:
             )
 
             cid = cls.components.add(component)
-            cls.graph.add_component(component.name, cid=cid, description=comp.get('description', ""))
+            MCSGraph.add_component(component.name, cid=cid, description=comp.get('description', ""))
 
             if not symbols:
                 symbols = utils.extract_msg_id_map(component.path, prefix=data.get('msg_id_prefix', 'MSG_'))
@@ -100,15 +98,15 @@ class CANBus:
             MessageTracer.add_production(produced_msg_id, consumed_msgs_ids, target)
 
             if is_new_message:
-                log.info(f"{[produced_msg.producer_component_name]} produced a new message: {produced_msg}")
+                log.info(f"{[target]} produced a new message: {produced_msg}")
                 if produced_msg_type in cls.msg_types_in_buffer:
                     cls.msg_types_in_buffer[produced_msg_type] += 1
                 else:
                     cls.msg_types_in_buffer[produced_msg_type] = 1
 
                 for component in cls.components:
-                    if produced_msg_type in component.consumed_ids:
-                        log.info(f"Reopening [{target}] to handle a new message: {produced_msg}")
+                    if produced_msg_type in component.consumed_ids and component.is_analysed:
+                        log.info(f"Reopening [{component}] to handle a new message: {produced_msg}")
                         component.is_analysed = False # reopen this component as we got a new message for it.
 
             else:
@@ -120,7 +118,7 @@ class CANBus:
     @classmethod
     def update_graph(cls, target, consumed_msgs):
         """
-        Update the CANGraph with new edges from the consumed message sources to the target component
+        Update the MCSGraph with new edges from the consumed message sources to the target component
 
         :param target: The component the edge should point to
         :param consumed_msgs: The messages holding the edge information.
@@ -140,8 +138,7 @@ class CANBus:
                 'from_unconstrained_run': consumed_msg.from_unconstrained_run
             }
 
-            cls.graph.add_message_edge(source, target, message_data)
-            log.debug(f"Added edge between {[source]} -> {[target]} with message of type {[consumed_msg.msg_type_str]}")
+            MCSGraph.add_message_edge(source, target, message_data)
 
 
     @classmethod
@@ -153,7 +150,6 @@ class CANBus:
         cls.components.clear()
         cls.buffer.clear()
         cls.msg_types_in_buffer.clear()
-        cls.graph.clear()
         cls.config = Config()
         cls._initialized = False
 
@@ -188,7 +184,7 @@ class CANBus:
     @classmethod
     def display(cls):
         """
-        Helper method to display the the CANBus configuration in a somewhat readable way.
+        Helper method to display the CANBus configuration in a somewhat readable way.
         :return:
         """
         s = "-- CAN-Bus -- \n components:\n"

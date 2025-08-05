@@ -2,6 +2,7 @@
   "var_length": 64,
   "input_hooks": ["scanf"],
   "output_hooks": ["printf"],
+  "msg_id_prefix": "MSG_",
   "components_dir": "./bin/cesna",
   "components": [
     {

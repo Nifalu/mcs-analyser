@@ -13,17 +13,16 @@ int main() {
     if (rx_msg_id == MSG_SPEED) {
         uint64_t speed = rx_msg_data;
         uint64_t status;
-        
-        // Simple processing - two cases
-        if (speed > 150) {
-            status = 2;  // High speed
+
+        if (speed > 2000) {
+            printf("%lu%lu\n", MSG_WARNING, 2);
+        } else if (speed > 1000) {
+            printf("%lu%lu\n", MSG_SPEED_STATUS, 1);
         } else if (speed > 50) {
-            status = 1;  // Normal speed
-        } else {
-            status = 0;  // Low speed
+            printf("%lu%lu\n", MSG_SPEED_STATUS, 0);
         }
         
-        printf("%lu%lu\n", MSG_SPEED_STATUS, status);
+
     }
     
     return 0;

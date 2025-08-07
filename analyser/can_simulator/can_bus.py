@@ -84,33 +84,32 @@ class CANBus:
 
         target = produced_msg.producer_component_name
 
-        if produced_msg:
-            if produced_msg.msg_type.is_symbolic():
-                log.warning(f"{[produced_msg.producer_component_name]} produced a msg with symbolic type: {produced_msg}")
-                return
+        if produced_msg.msg_type.is_symbolic():
+            log.warning(f"{[produced_msg.producer_component_name]} produced a msg with symbolic type: {produced_msg}")
+            return
 
-            produced_msg_type = produced_msg.msg_type.bv.concrete_value
+        produced_msg_type = produced_msg.msg_type.bv.concrete_value
 
-            is_new_message = not cls.buffer.contains(produced_msg)
-            produced_msg_id = cls.buffer.add(produced_msg)
-            consumed_msgs_ids = [cls.buffer.get_id(m) for m in consumed_msgs]
+        is_new_message = not cls.buffer.contains(produced_msg)
+        produced_msg_id = cls.buffer.add(produced_msg)
+        consumed_msgs_ids = [cls.buffer.get_id(m) for m in consumed_msgs]
 
-            MessageTracer.add_production(produced_msg_id, consumed_msgs_ids, target)
+        MessageTracer.add_production(produced_msg_id, consumed_msgs_ids, target)
 
-            if is_new_message:
-                log.info(f"{[target]} produced a new message: {produced_msg}")
-                if produced_msg_type in cls.msg_types_in_buffer:
-                    cls.msg_types_in_buffer[produced_msg_type] += 1
-                else:
-                    cls.msg_types_in_buffer[produced_msg_type] = 1
-
-                for component in cls.components:
-                    if produced_msg_type in component.consumed_ids and component.is_analysed:
-                        log.info(f"Reopening [{component}] to handle a new message: {produced_msg}")
-                        component.is_analysed = False # reopen this component as we got a new message for it.
-
+        if is_new_message:
+            log.info(f"{[target]} produced a new message: {produced_msg}")
+            if produced_msg_type in cls.msg_types_in_buffer:
+                cls.msg_types_in_buffer[produced_msg_type] += 1
             else:
-                log.debug(f"{[produced_msg]} already in buffer")
+                cls.msg_types_in_buffer[produced_msg_type] = 1
+
+            for component in cls.components:
+                if produced_msg_type in component.consumed_ids and component.is_analysed:
+                    log.info(f"Reopening [{component}] to handle a new message: {produced_msg}")
+                    component.is_analysed = False # reopen this component as we got a new message for it.
+
+        else:
+            log.debug(f"{[produced_msg]} already in buffer")
 
         cls.update_graph(target, consumed_msgs)
 

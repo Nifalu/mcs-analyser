@@ -60,14 +60,13 @@ class Coordinator:
             while True:
                 made_progress = False
                 for component in bus.components:
-                    if not component.is_analysed:
-                        if cls._can_analyse(component, bus):
-                            made_progress = True
-                            mcsa = analyser_dict.get(component.name)
-                            mcsa.analyse()
-                            component.is_analysed = True
-                            if step_mode:
-                                MCSGraph.visualize(bus, step_mode)
+                    if not component.is_analysed and cls._can_analyse(component, bus):
+                        made_progress = True
+                        mcsa = analyser_dict.get(component.name)
+                        mcsa.analyse()
+                        component.is_analysed = True
+                        if step_mode:
+                            MCSGraph.visualize(bus, step_mode)
                 if not made_progress:
                     break
 

@@ -49,6 +49,9 @@ class InputTracker:
 
         if cls.component.max_expected_inputs == 0:
             cls.yield_unconstrained = True
+            cls.input_combinations = iter([None])
+            # cheap way to make "has_next_combination" return true exactly once
+            # when in unconstrained mode
         else:
             cls.yield_unconstrained = False # We've got input
             cls.input_combinations = cls.generate_input_combinations()
@@ -58,6 +61,9 @@ class InputTracker:
     def has_next_combination(cls):
         try:
             combination = next(cls.input_combinations)
+            if cls.yield_unconstrained:
+                return True
+
             cls.soft_reset()
             cls.flattened_with_context.clear()
             for msg in combination:

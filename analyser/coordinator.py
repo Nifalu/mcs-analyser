@@ -3,7 +3,7 @@ from pathlib import Path
 from analyser.can_simulator import CANBus
 from analyser.component_analyser import ComponentAnalyser
 from analyser.common import Config, logger
-from analyser.mcs_graph import MCSGraph
+from analyser.common.mcs_graph import MCSGraph
 
 log = logger(__name__)
 

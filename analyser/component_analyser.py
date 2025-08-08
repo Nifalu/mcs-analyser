@@ -29,7 +29,6 @@ class ComponentAnalyser:
         :param component: The component to analyse.
         """
         self.component: Component = component
-        self.is_unconstrained_run = False
         self.current_input_combinations = None
 
         self.input_hook_registry: InputHookRegistry = InputHookRegistry()
@@ -50,88 +49,70 @@ class ComponentAnalyser:
         log.info(f"Input Functions {[(name, hex(addr)) for addr, name in self.input_addrs.items()]}")
         log.info(f"Output Functions {[(name, hex(addr)) for addr, name in self.output_addrs.items()]}")
 
-
     def analyse(self) -> None:
         """
         Analyses the `Component` of this `ComponentAnalyser`.
 
-        6. To do this we determine if we are in an unconstrained run. If the component has not been analysed before,
-        we first have to figure out how many inputs it needs => run in unconstrained mode. If it already has been
-        analysed, the metadata like expected inputs should be available. In this case, we can generate input
-        combinations and run an analysis for each of them.
-        :return:
-        """
-        log.info(f"\n=========== Going to Analyse {self.component} ============")
-        if self.component.max_expected_inputs == 0:
-            # Run in unconstrained mode to figure out how many inputs this component needs
-            self.is_unconstrained_run = True
-            InputTracker.new(self.component)
-            self._run_analysis()
-        else:
-            self.is_unconstrained_run = False
-            InputTracker.new(self.component)
-            while InputTracker.has_next_combination():
-                self._run_analysis()
-
-
-    def _run_analysis(self) -> None:
-        """
-        Internal function for an individual analysis run. Should not be called directly. See `analyse()` instead.
-
-        For each entry point (usually there is just 1) we do the following:
+        6. Prepare a new InputTracker for this component and run as many analysis runs as there are
+        available input combinations. If the component has not been analysed yet, InputTracker will only
+        have one next combination which is with unconstrained input.
 
         7. Soft reset the InputTracker (resets various counters but keeps the input combination)
+
         8. Copy the entrypoint state to keep the original entry points clean.
-        9. Add a breakpoint on 'call' statements then explore towards output addresses. If no
-        output addresses are found (consumer only component), simply step for some time before
-        analysing the constraints on the inputs.
+
+        9. Add a breakpoint on 'call' statements and perform a "check()" before each call instruction.
+
+        10. Explore towards output addresses. If no output addresses are found (consumer only component),
+        simply step for some time before analysing the constraints on the inputs.
         :return:
         """
+        InputTracker.new(self.component)
+        while InputTracker.has_next_combination():
+            for entry_point in self.entry_points:
 
-        for entry_point in self.entry_points:
+                InputTracker.soft_reset()
+                entry_point_copy = entry_point.copy()
 
-            InputTracker.soft_reset()
-            entry_point_copy = entry_point.copy()
-
-            entry_point_copy.inspect.b(
-                'call',
-                when=angr.BP_BEFORE,
-                action=lambda state: self._capture_output(state)
-            )
-
-            simgr: SimulationManager = self.proj.factory.simgr(entry_point_copy)
-
-            if self.output_addrs:
-                log.debug(f"Finding all solutions from {entry_point_copy.addr:#x}")
-                simgr.explore(
-                    find=list(self.output_addrs.keys()),
-                    cfg=self.cfg,
-                    num_find=NUM_FIND,
+                entry_point_copy.inspect.b(
+                    'call',
+                    when=angr.BP_BEFORE,
+                    action=lambda state: self._capture_output(state)
                 )
-                log.debug(f"Found {len(simgr.found)} solutions")
-            else:
-                latest_state = None
-                step_count = 0
-                max_steps = 10000
 
-                while simgr.active and step_count < max_steps:
-                    latest_state = simgr.active[0]
-                    simgr.step()
-                    step_count += 1
-                log.debug(f"stepped {step_count} steps and read {InputTracker.input_counter} inputs but consumed {InputTracker.consumed_messages} messages")
+                simgr: SimulationManager = self.proj.factory.simgr(entry_point_copy)
 
-                if InputTracker.yield_unconstrained:
-                    OutputChecker.extract_consumed_ids(self.component, latest_state)
-                    self.component.update_max_expected_inputs(InputTracker.max_inputs_counted)
-                CANBus.update_graph(self.component.name, InputTracker.get_consumed_messages())
+                if self.output_addrs:
+                    log.debug(f"Finding all solutions from {entry_point_copy.addr:#x}")
+                    simgr.explore(
+                        find=list(self.output_addrs.keys()),
+                        cfg=self.cfg,
+                        num_find=NUM_FIND,
+                    )
+                    log.debug(f"Found {len(simgr.found)} solutions")
+                else:
+                    latest_state = None
+                    step_count = 0
+                    max_steps = 10000
+
+                    while simgr.active and step_count < max_steps:
+                        latest_state = simgr.active[0]
+                        simgr.step()
+                        step_count += 1
+                    log.debug(f"stepped {step_count} steps and read {InputTracker.input_counter} inputs but consumed {InputTracker.consumed_messages} messages")
+
+                    if InputTracker.yield_unconstrained:
+                        OutputChecker.extract_consumed_ids(self.component, latest_state)
+                        self.component.update_max_expected_inputs(InputTracker.max_inputs_counted)
+                    CANBus.update_graph(self.component.name, InputTracker.get_consumed_messages())
 
 
     def _capture_output(self, state: SimState):
         """
         Internal function to capture output from an individual analysis run. Should not be called directly.
 
-        10. Check if we're at an output function and if so, update various flags and counters
-        11. Write the captured output to the CAN bus.
+        11. Check if we're at an output function and if so, update various flags and counters
+        12. Write the captured output to the CAN bus.
 
         :param state:
         :return:
@@ -139,7 +120,7 @@ class ComponentAnalyser:
         result: Message | None = self.output_checker.check(state, self.output_addrs.keys())
         if result is not None:
             self.component.update_max_expected_inputs(InputTracker.max_inputs_counted)
-            if self.is_unconstrained_run and len(self.component.consumed_ids) > 0:
+            if InputTracker.yield_unconstrained and len(self.component.consumed_ids) > 0:
                 result.from_unconstrained_run = True
             if result.msg_type.is_symbolic():
                 log.warning(f"{self.component.name} produced a symbolic msg_id {result.msg_type}")

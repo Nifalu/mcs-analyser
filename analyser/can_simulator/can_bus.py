@@ -1,6 +1,6 @@
 from json import load
 from pathlib import Path
-from analyser.mcs_graph import MCSGraph
+from analyser.common.mcs_graph import MCSGraph
 from analyser.can_simulator.can_component import Component
 from analyser.can_simulator.can_message import Message
 from analyser.common import Config, IndexedSet, MessageTracer, logger, utils
@@ -66,7 +66,7 @@ class CANBus:
 
 
     @classmethod
-    def write(cls, produced_msg: Message = None, consumed_msgs: set[Message] = None):
+    def write(cls, produced_msg: Message, consumed_msgs: set[Message] = None):
         """
         Writes a produced `Message` to the buffer if no identical message is already in it.
 
@@ -76,10 +76,6 @@ class CANBus:
         """
         if not cls._initialized:
             log.error(f"Writing to an uninitialized CAN bus...")
-            return
-
-        if not produced_msg:
-            log.error(f"Got a message with no sender name")
             return
 
         target = produced_msg.producer_component_name

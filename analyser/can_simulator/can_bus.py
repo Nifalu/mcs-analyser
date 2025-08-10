@@ -125,13 +125,13 @@ class CANBus:
 
             message_data = {
                 'type': consumed_msg.msg_type_str,
-                'msg_type_bv': str(consumed_msg.msg_type.bv),
-                'msg_type_constraints': str(consumed_msg.msg_type.constraints),
                 'msg_data_bv': str(consumed_msg.msg_data.bv),
                 'msg_data_constraints': str(consumed_msg.msg_data.constraints),
                 'msg_id': consumed_msg_id,
-                'from_unconstrained_run': consumed_msg.from_unconstrained_run
             }
+
+            if consumed_msg.from_unconstrained_run:
+                message_data['from_unconstrained_run'] = True
 
             MCSGraph.add_message_edge(source, target, message_data)
 

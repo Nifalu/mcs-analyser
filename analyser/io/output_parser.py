@@ -15,7 +15,7 @@ output functions might have, we kinda have to retrieve them manually.
 """
 
 
-class OutputFunctionParser(ABC):
+class OutputParserBase(ABC):
     """Base class for parsing output function arguments"""
 
 
@@ -65,7 +65,7 @@ class OutputFunctionParser(ABC):
 
 
 
-class PrintfParser(OutputFunctionParser):
+class PrintfParser(OutputParserBase):
     """
     OutputFunctionParser for printf functions.
     """
@@ -141,13 +141,13 @@ class OutputParserRegistry:
         """
         Registry for output function parsers.
         """
-        self.parsers: list[OutputFunctionParser] = [
+        self.parsers: list[OutputParserBase] = [
             PrintfParser(),
         ]
         self.address_to_name = {}  # Cache for address -> function name mapping
 
 
-    def register_parser(self, parser: OutputFunctionParser):
+    def register_parser(self, parser: OutputParserBase):
         """
         Register additional output parsers
         :param parser:
@@ -169,7 +169,7 @@ class OutputParserRegistry:
         self.address_to_name[addr] = name
 
 
-    def get_parser(self, func_addr: int) -> Optional[OutputFunctionParser]:
+    def get_parser(self, func_addr: int) -> Optional[OutputParserBase]:
         """
         Retrieve the parser for the given function address.
 

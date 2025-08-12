@@ -84,7 +84,7 @@ class CANBus:
             log.warning(f"{[produced_msg.producer_component_name]} produced a msg with symbolic type: {produced_msg}")
             return
 
-        produced_msg_type = produced_msg.msg_type.bv.concrete_value
+
 
         is_new_message = not cls.buffer.contains(produced_msg)
         produced_msg_id = cls.buffer.add(produced_msg)
@@ -93,6 +93,7 @@ class CANBus:
         MessageTracer.add_production(produced_msg_id, consumed_msgs_ids, target)
 
         if is_new_message:
+            produced_msg_type = produced_msg.msg_type.bv.concrete_value
             log.info(f"{[target]} produced a new message: {produced_msg}")
             if produced_msg_type in cls.msg_types_in_buffer:
                 cls.msg_types_in_buffer[produced_msg_type] += 1

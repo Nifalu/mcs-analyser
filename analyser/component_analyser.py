@@ -67,7 +67,7 @@ class ComponentAnalyser:
         simply step for some time before analysing the constraints on the inputs.
         :return:
         """
-        InputTracker.new(self.component)
+        InputTracker.track(self.component)
         while InputTracker.has_next_combination():
             for entry_point in self.entry_points:
 

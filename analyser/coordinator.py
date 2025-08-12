@@ -48,13 +48,10 @@ class Coordinator:
                 mcsa = ComponentAnalyser(component)
                 analyser_dict[component.name] = mcsa
                 mcsa.analyse()
-                if step_mode:
-                    MCSGraph.visualize(bus, step_mode)
-
-            # Mark leaf components as "analysed" no need to analyse them twice with unconstrained input.
-            for component in bus.components:
                 if not component.consumed_ids:
                     component.is_analysed = True
+                if step_mode:
+                    MCSGraph.visualize(bus, step_mode)
 
             # Try to find components that can be analysed given the messages on the bus.
             while True:

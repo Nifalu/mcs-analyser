@@ -29,7 +29,7 @@ class InputTracker:
 
 
     @classmethod
-    def new(cls, component: Component):
+    def track(cls, component: Component):
         """
         Prepare (reset) the tracker for a new combination or component.
         :param component:

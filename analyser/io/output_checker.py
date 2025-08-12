@@ -3,7 +3,7 @@ import re
 
 from analyser.can_simulator import Component, Message
 from analyser.io.input_tracker import InputTracker
-from analyser.io.output_parser import OutputParserRegistry, OutputFunctionParser
+from analyser.io.output_parser import OutputParserRegistry, OutputParserBase
 from analyser.common import logger, IOState
 log = logger(__name__)
 
@@ -29,7 +29,7 @@ class OutputChecker:
         self.parser_registry.register_function(addr, name)
 
 
-    def register_parser(self, parser: OutputFunctionParser):
+    def register_parser(self, parser: OutputParserBase):
         """Register a custom parser"""
         self.parser_registry.register_parser(parser)
 

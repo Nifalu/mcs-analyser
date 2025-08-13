@@ -22,8 +22,9 @@ This tool is developed as part of my bachelors thesis: *link follows*. Read the 
 
 
 ## Graph Visualisation:
-*content follows soon*
-
+Storing the communication paths in a graph structure makes sense because it allows for a intuitive way of representing the real world objects and their relationships in code. Visualising the graph for the user is a natural next step as it often helps to understand complex relationships and dependencies, in this case, communication paths more easily.
+![plain-graph.png](img/plain-graph.png)
+_Schnauzer_ provides an interactive way to explore the graph, allowing users to simply click on edges to highlight the origin of a message. Other features include the search for specific attributes, nodes, edges and the ability to hide the communication paths produced by running components with unconstrained inputs. This is particularly useful to check whether a component would communicate differently if previous components were malfunctioning, providing unconstrained or at least unexpected inputs.
 
 ## General Requirements
 

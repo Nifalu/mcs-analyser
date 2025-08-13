@@ -1,0 +1,80 @@
+{
+  "var_length": 64,
+  "input_hooks": ["scanf"],
+  "output_hooks": ["printf"],
+  "msg_id_prefix": "MSG_",
+  "components_dir": "./bin/jumbo",
+  "components": [
+    {
+      "name": "Airspeed Sensor",
+      "filename": "c1_airspeed_sensor",
+      "description": "Measures current airspeed"
+    },
+    {
+      "name": "Altitude Sensor",
+      "filename": "c2_altitude_sensor",
+      "description": "Measures current altitude"
+    },
+    {
+      "name": "Engine RPM Sensor",
+      "filename": "c3_engine_rpm_sensor",
+      "description": "Measures current engine RPM"
+    },
+    {
+      "name": "Engine Temp Sensor",
+      "filename": "c4_engine_temp_sensor",
+      "description": "Measures current engine temperature"
+    },
+    {
+      "name": "Engine Control Unit",
+      "filename": "c5_engine_control_unit",
+      "description": "Engine Control Unit: Interface to control the engine"
+    },
+    {
+      "name": "Engine Monitor",
+      "filename": "c6_engine_monitor",
+      "description": "Monitors engine performance"
+    },
+    {
+      "name": "MCAS",
+      "filename": "c7_mcas",
+      "description": "Maneuvering Characteristics Augmentation System"
+    },
+    {
+      "name": "Terrain Warning System",
+      "filename": "c8_terrain_warning_system",
+      "description": "System containing a programmers error"
+    },
+    {
+      "name": "Hydraulics",
+      "filename": "c9_hydraulics",
+      "description": "Controls various hydraulics"
+    },
+    {
+      "name": "Primary Flight Display",
+      "filename": "c10_primary_flight_display",
+      "description": "Displays information in the Cockpit"
+    },
+    {
+      "name": "Cockpit Controls",
+      "filename": "c11_cockpit_controls",
+      "description": "Reads pilot input"
+    },
+    {
+      "name": "Navigation System",
+      "filename": "c12_navigation_system",
+      "description": "Autopilot, Landing Assist etc"
+    },
+    {
+      "name": "Engine",
+      "filename": "c13_engine",
+      "description": "The physical engine"
+    },
+    {
+      "name": "Angle of Attack Sensor",
+      "filename": "c14_angle_of_attack_sensor",
+      "description": "A malfunctioning sensor"
+    }
+
+  ]
+}

@@ -67,6 +67,7 @@ class ComponentAnalyser:
         simply step for some time before analysing the constraints on the inputs.
         :return:
         """
+        log.info(f"\n=== Analysing {self.component} ===")
         InputTracker.track(self.component)
         while InputTracker.has_next_combination():
             for entry_point in self.entry_points:
@@ -89,23 +90,48 @@ class ComponentAnalyser:
                         cfg=self.cfg,
                         num_find=NUM_FIND,
                     )
-                    log.debug(f"Found {len(simgr.found)} solutions")
+
+                    all_solutions = []
+                    current_batch = simgr.found
+                    log.debug(f"Found {len(current_batch)} initial solutions. Exploring deeper within the binary...")
+                    while current_batch:
+                        all_solutions.extend(current_batch)
+                        additional_solutions = []
+                        for state in current_batch:
+                            new_simgr = self.proj.factory.simgr(state.copy())
+                            new_simgr.step()
+                            new_simgr.explore(
+                                find=list(self.output_addrs.keys()),
+                                cfg=self.cfg,
+                                num_find=NUM_FIND,
+                            )
+                            additional_solutions.extend(new_simgr.found)
+                        current_batch = additional_solutions
+                    log.info(f"Found {len(all_solutions)} solutions.")
                 else:
-                    latest_state = None
+                    all_states = []
                     step_count = 0
                     max_steps = 10000
 
                     while simgr.active and step_count < max_steps:
-                        latest_state = simgr.active[0]
+                        # Collect all active states before stepping
+                        all_states.extend(simgr.active)
                         simgr.step()
                         step_count += 1
-                    log.debug(f"stepped {step_count} steps and read {InputTracker.input_counter} inputs but consumed {InputTracker.consumed_messages} messages")
+
+                    # Also collect any remaining active states
+                    all_states.extend(simgr.active)
+
+                    log.debug(f"stepped {step_count} steps and explored {len(all_states)} states")
+                    log.debug(f"read {InputTracker.input_counter} inputs but consumed {InputTracker.consumed_messages} messages")
 
                     if InputTracker.yield_unconstrained:
-                        OutputChecker.extract_consumed_ids(self.component, latest_state)
+                        # Extract consumed IDs from ALL explored states
+                        for state in all_states:
+                            OutputChecker.extract_consumed_ids(self.component, state)
                         self.component.update_max_expected_inputs(InputTracker.max_inputs_counted)
                     CANBus.update_graph(self.component.name, InputTracker.get_consumed_messages())
-
+        log.info(f"==================================\n")
 
     def _capture_output(self, state: SimState):
         """

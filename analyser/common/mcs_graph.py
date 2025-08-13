@@ -130,7 +130,7 @@ class MCSGraph(MultiDiGraph):
 
         instance.vc.send_graph(
             instance,
-            title="MCS Data Flow",
+            title="MCS Communication",
             traces=traces
         )
 
